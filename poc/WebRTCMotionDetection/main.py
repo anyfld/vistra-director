@@ -16,7 +16,6 @@ import aiohttp
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, RTCSessionDescription
-from av import VideoFrame
 from ultralytics import YOLO
 
 # ロギング設定
@@ -90,6 +89,9 @@ class WebRTCObjectDetector:
         enable_motion_detection: bool = True,
         confidence_threshold: float = 0.5,
         insecure: bool = False,
+        imgsz: int = 640,
+        half: bool = False,
+        max_det: int = 300,
     ):
         """
         Args:
@@ -100,6 +102,9 @@ class WebRTCObjectDetector:
             enable_motion_detection: 動体検知を有効にするか
             confidence_threshold: 物体検知の信頼度閾値
             insecure: SSL証明書の検証をスキップするか
+            imgsz: YOLO推論時の画像サイズ（小さいほど高速）
+            half: 半精度演算を使用（GPU時に高速化）
+            max_det: 最大検出数
         """
         self.go2rtc_url = go2rtc_url.rstrip("/")
         self.stream_name = stream_name
@@ -108,6 +113,9 @@ class WebRTCObjectDetector:
         self.enable_motion_detection = enable_motion_detection
         self.confidence_threshold = confidence_threshold
         self.insecure = insecure
+        self.imgsz = imgsz
+        self.half = half
+        self.max_det = max_det
 
         self.pc: Optional[RTCPeerConnection] = None
         self.model: Optional[YOLO] = None
@@ -118,16 +126,36 @@ class WebRTCObjectDetector:
         self.fps = 0.0
         self.last_fps_time = time.time()
 
-        # 最新フレームを保持
+        # 最新フレームを保持（ダブルバッファリング）
         self.latest_frame: Optional[np.ndarray] = None
         self.frame_lock = asyncio.Lock()
+
+        # 処理待ちフレーム（最新のみ保持して古いフレームはスキップ）
+        self._pending_frame: Optional[np.ndarray] = None
+        self._pending_frame_lock = asyncio.Lock()
+
+        # 推論時間の計測
+        self.inference_time_ms = 0.0
 
     async def setup(self) -> None:
         """モデルとコンポーネントの初期化"""
         if self.enable_object_detection:
             logger.info(f"YOLOv8モデルをロード中: {self.model_name}")
             self.model = YOLO(self.model_name)
-            logger.info("モデルのロード完了")
+
+            # モデルのウォームアップ（初回推論を高速化）
+            logger.info(
+                f"モデルをウォームアップ中 (imgsz={self.imgsz}, half={self.half})..."
+            )
+            dummy_img = np.zeros((self.imgsz, self.imgsz, 3), dtype=np.uint8)
+            self.model(
+                dummy_img,
+                verbose=False,
+                imgsz=self.imgsz,
+                half=self.half,
+                max_det=self.max_det,
+            )
+            logger.info("モデルのロード・ウォームアップ完了")
         else:
             logger.info("物体検知（YOLO）は無効です")
 
@@ -228,10 +256,16 @@ class WebRTCObjectDetector:
         logger.info("ビデオトラック処理を開始")
         self.running = True
 
+        # フレーム受信と処理を分離して並列化
+        asyncio.create_task(self._frame_processor())
+
         while self.running:
             try:
                 frame = await asyncio.wait_for(track.recv(), timeout=5.0)
-                await self._handle_frame(frame)
+                # フレームをNumPy配列に変換して保持（最新のみ）
+                img = frame.to_ndarray(format="bgr24")
+                async with self._pending_frame_lock:
+                    self._pending_frame = img
             except asyncio.TimeoutError:
                 logger.warning("フレーム受信タイムアウト")
                 continue
@@ -242,11 +276,23 @@ class WebRTCObjectDetector:
 
         logger.info("ビデオトラック処理を終了")
 
-    async def _handle_frame(self, frame: VideoFrame) -> None:
-        """フレームを処理して物体検知を実行"""
-        # フレームをNumPy配列に変換 (RGB -> BGR)
-        img = frame.to_ndarray(format="bgr24")
+    async def _frame_processor(self) -> None:
+        """フレームを処理するワーカー（別タスクで実行）"""
+        while self.running:
+            # 処理待ちフレームを取得
+            async with self._pending_frame_lock:
+                img = self._pending_frame
+                self._pending_frame = None
 
+            if img is None:
+                # フレームがない場合は少し待機
+                await asyncio.sleep(0.001)
+                continue
+
+            await self._handle_frame(img)
+
+    async def _handle_frame(self, img: np.ndarray) -> None:
+        """フレームを処理して物体検知を実行"""
         # FPS計算
         self.frame_count += 1
         current_time = time.time()
@@ -264,14 +310,26 @@ class WebRTCObjectDetector:
         # YOLOv8で物体検知（有効な場合）
         detection_count = 0
         if self.enable_object_detection and self.model:
-            results = self.model(img, verbose=False, conf=self.confidence_threshold)
+            inference_start = time.perf_counter()
+            results = self.model(
+                img,
+                verbose=False,
+                conf=self.confidence_threshold,
+                imgsz=self.imgsz,
+                half=self.half,
+                max_det=self.max_det,
+            )
+            self.inference_time_ms = (time.perf_counter() - inference_start) * 1000
             annotated_frame = results[0].plot()
             detection_count = len(results[0].boxes)
         else:
-            annotated_frame = img.copy()
+            # 物体検知が無効な場合は直接使用（コピーしない）
+            annotated_frame = img
 
-        # 動体検知結果を描画
+        # 動体検知結果を描画（動体検知が有効な場合のみコピーが必要）
         if self.enable_motion_detection:
+            if not self.enable_object_detection:
+                annotated_frame = img.copy()
             for x, y, w, h in motion_regions:
                 cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
                 cv2.putText(
@@ -287,10 +345,11 @@ class WebRTCObjectDetector:
         # ステータス情報を表示
         status_text = f"FPS: {self.fps:.1f}"
         if self.enable_object_detection:
-            status_text += f" | Detections: {detection_count}"
+            status_text += f" | Inf: {self.inference_time_ms:.0f}ms"
+            status_text += f" | Det: {detection_count}"
         if self.enable_motion_detection:
-            motion_status = "Yes" if motion_detected else "No"
-            status_text += f" | Motion: {motion_status}"
+            motion_status = "Y" if motion_detected else "N"
+            status_text += f" | Mot: {motion_status}"
 
         cv2.putText(
             annotated_frame,
@@ -356,7 +415,8 @@ class WebRTCObjectDetector:
                 self.running = False
                 break
 
-            await asyncio.sleep(0.01)
+            # 表示ループの待機時間を最小化
+            await asyncio.sleep(0.001)
 
         cv2.destroyAllWindows()
 
@@ -432,6 +492,23 @@ def main():
         help="物体検知の信頼度閾値（0.0-1.0、デフォルト: 0.5）",
     )
     parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="YOLO推論画像サイズ（小さいほど高速、デフォルト: 640、低遅延なら320推奨）",
+    )
+    parser.add_argument(
+        "--half",
+        action="store_true",
+        help="半精度演算を使用（GPU時に高速化）",
+    )
+    parser.add_argument(
+        "--max-det",
+        type=int,
+        default=300,
+        help="最大検出数（デフォルト: 300）",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="詳細なログを出力する",
@@ -454,6 +531,9 @@ def main():
         enable_motion_detection=enable_motion,
         confidence_threshold=args.confidence,
         insecure=args.insecure,
+        imgsz=args.imgsz,
+        half=args.half,
+        max_det=args.max_det,
     )
 
     try:
