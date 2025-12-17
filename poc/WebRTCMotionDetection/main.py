@@ -59,7 +59,8 @@ class MotionDetector:
         thresh = cv2.threshold(frame_delta, self.threshold, 255, cv2.THRESH_BINARY)[1]
 
         # 膨張処理で穴を埋める
-        thresh = cv2.dilate(thresh, None, iterations=2)
+        kernel = np.ones((5, 5), np.uint8)
+        thresh = cv2.dilate(thresh, kernel, iterations=2)
 
         # 輪郭を検出
         contours, _ = cv2.findContours(
@@ -150,14 +151,16 @@ class WebRTCObjectDetector:
         self.pc.addTransceiver("video", direction="recvonly")
 
         @self.pc.on("track")
-        async def on_track(track):
+        async def on_track(track) -> None:  # type: ignore[no-untyped-def]
             logger.info(f"トラック受信: {track.kind}")
             if track.kind == "video":
                 self._track_event.set()
                 asyncio.create_task(self._process_video_track(track))
 
         @self.pc.on("connectionstatechange")
-        async def on_connectionstatechange():
+        async def on_connectionstatechange() -> None:
+            if self.pc is None:
+                return
             logger.info(f"接続状態: {self.pc.connectionState}")
             if self.pc.connectionState == "connected":
                 self._connected_event.set()
@@ -177,14 +180,13 @@ class WebRTCObjectDetector:
         logger.info(f"WHEPエンドポイントに接続中: {whep_url}")
 
         # SSL設定（自己署名証明書対応）
-        ssl_context: Optional[ssl.SSLContext] = None
+        connector: Optional[aiohttp.TCPConnector] = None
         if self.insecure:
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             logger.warning("SSL証明書の検証を無効化しています")
-
-        connector = aiohttp.TCPConnector(ssl=ssl_context) if self.insecure else None
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
 
         # WHEPエンドポイントにオファーを送信
         async with aiohttp.ClientSession(connector=connector) as session:
