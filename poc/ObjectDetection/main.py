@@ -21,13 +21,12 @@ def detect_image(
         image_path: 入力画像のパス
         output_dir: 出力ディレクトリ（省略時は入力画像と同じディレクトリ）
     """
-
     image_path_obj = Path(image_path)
     if not image_path_obj.exists():
-        raise FileNotFoundError(f"画像ファイルが見つかりません: {image_path}")
+        raise FileNotFoundError(f"画像ファイルが見つかりません: {image_path_obj}")
 
     # 物体検知を実行
-    results = model(image_path)
+    results = model(image_path_obj)
 
     # 結果を表示
     for result in results:
@@ -71,10 +70,10 @@ def detect_video(
     """
     video_path_obj = Path(video_path)
     if not video_path_obj.exists():
-        raise FileNotFoundError(f"動画ファイルが見つかりません: {video_path}")
+        raise FileNotFoundError(f"動画ファイルが見つかりません: {video_path_obj}")
 
     # 物体検知を実行
-    model(str(video_path), save=True)
+    model(str(video_path_obj), save=True)
 
     if output_path:
         # 結果はmodel()のsave=Trueで保存されるが、カスタムパスが必要な場合
