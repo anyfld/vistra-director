@@ -1,6 +1,7 @@
 """
 Ultralytics YOLOv8を使用した物体検知プログラム
 """
+
 import argparse
 from pathlib import Path
 from typing import Optional
@@ -9,7 +10,9 @@ import cv2
 from ultralytics import YOLO
 
 
-def detect_image(model: YOLO, image_path: str, output_dir: Optional[str] = None) -> None:
+def detect_image(
+    model: YOLO, image_path: str, output_dir: Optional[str] = None
+) -> None:
     """
     画像ファイルから物体検知を実行
 
@@ -18,8 +21,9 @@ def detect_image(model: YOLO, image_path: str, output_dir: Optional[str] = None)
         image_path: 入力画像のパス
         output_dir: 出力ディレクトリ（省略時は入力画像と同じディレクトリ）
     """
-    image_path = Path(image_path)
-    if not image_path.exists():
+
+    image_path_obj = Path(image_path)
+    if not image_path_obj.exists():
         raise FileNotFoundError(f"画像ファイルが見つかりません: {image_path}")
 
     # 物体検知を実行
@@ -31,7 +35,7 @@ def detect_image(model: YOLO, image_path: str, output_dir: Optional[str] = None)
         annotated_frame = result.plot()
 
         # 検知結果を表示
-        print(f"\n検知結果 ({image_path.name}):")
+        print(f"\n検知結果 ({image_path_obj.name}):")
         print(f"検出された物体数: {len(result.boxes)}")
         for box in result.boxes:
             cls = int(box.cls[0])
@@ -41,9 +45,9 @@ def detect_image(model: YOLO, image_path: str, output_dir: Optional[str] = None)
 
         # 結果を保存
         if output_dir:
-            output_path = Path(output_dir) / f"detected_{image_path.name}"
+            output_path = Path(output_dir) / f"detected_{image_path_obj.name}"
         else:
-            output_path = image_path.parent / f"detected_{image_path.name}"
+            output_path = image_path_obj.parent / f"detected_{image_path_obj.name}"
 
         cv2.imwrite(str(output_path), annotated_frame)
         print(f"\n検知結果を保存しました: {output_path}")
@@ -54,7 +58,9 @@ def detect_image(model: YOLO, image_path: str, output_dir: Optional[str] = None)
         cv2.destroyAllWindows()
 
 
-def detect_video(model: YOLO, video_path: str, output_path: Optional[str] = None) -> None:
+def detect_video(
+    model: YOLO, video_path: str, output_path: Optional[str] = None
+) -> None:
     """
     動画ファイルから物体検知を実行
 
@@ -63,18 +69,18 @@ def detect_video(model: YOLO, video_path: str, output_path: Optional[str] = None
         video_path: 入力動画のパス
         output_path: 出力動画のパス（省略時は入力動画と同じディレクトリに保存）
     """
-    video_path = Path(video_path)
-    if not video_path.exists():
+    video_path_obj = Path(video_path)
+    if not video_path_obj.exists():
         raise FileNotFoundError(f"動画ファイルが見つかりません: {video_path}")
 
     # 物体検知を実行
-    results = model(str(video_path), save=True)
+    model(str(video_path), save=True)
 
     if output_path:
         # 結果はmodel()のsave=Trueで保存されるが、カスタムパスが必要な場合
         print(f"検知結果を保存しました: {output_path}")
     else:
-        print(f"検知結果を保存しました: runs/detect/predict/")
+        print("検知結果を保存しました: runs/detect/predict/")
 
     print("\n動画の物体検知が完了しました。")
 
