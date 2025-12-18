@@ -1,11 +1,15 @@
 """
 WebRTC Camera Zoom Viewer サーバー
 
-go2rtcの映像をズームイン/アウトできるWebビューアを提供するHTTPSサーバー。
-Media Capture and Stream APIとWebRTC (WHEP)を使用して映像を受信し、
-go2rtcのPTZ APIを使用して配信元カメラのズームを制御します。
+go2rtcの映像をズームイン/アウトできるWebビューアを提供するHTTP/HTTPSサーバー。
+Media Capture and Stream APIとWebRTCを使用して映像を配信・受信し、
+配信側のカメラズームを視聴側から制御できます。
 
-WHEPプロキシ機能により、CORSや証明書の問題を回避します。
+アーキテクチャ:
+- WebRTC映像ストリーム: ブラウザ → go2rtc 直接接続
+- ズーム/PTZ制御: ブラウザ → このサーバー → go2rtc
+
+go2rtc側でCORS設定（api.origin: "*"）が必要です。
 """
 
 import argparse
@@ -131,7 +135,9 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
             self.send_error(400, "Missing cmd parameter")
             return
 
-        logger.info(f"ズームコマンド受信: stream={stream_name}, cmd={cmd}, value={value}")
+        logger.info(
+            f"ズームコマンド受信: stream={stream_name}, cmd={cmd}, value={value}"
+        )
 
         command_data: dict[str, Any] = {
             "cmd": cmd,
@@ -153,7 +159,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
                 except Exception as e:
                     logger.warning(f"SSE送信エラー: {e}")
                     clients_to_remove.append(client)
-            
+
             # 切断されたクライアントを削除
             for client in clients_to_remove:
                 WHEPProxyHandler.sse_clients[stream_name].remove(client)
@@ -167,7 +173,8 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
             # 古いコマンドを削除（5秒以上前）
             current_time = time.time()
             WHEPProxyHandler.zoom_commands[stream_name] = [
-                c for c in WHEPProxyHandler.zoom_commands[stream_name]
+                c
+                for c in WHEPProxyHandler.zoom_commands[stream_name]
                 if current_time - c["timestamp"] < 5
             ]
 
@@ -215,7 +222,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
                 params[key] = urllib.parse.unquote(value)
 
         stream_name = params.get("stream", "camera")
-        
+
         logger.info(f"SSE接続開始: stream={stream_name}")
 
         # SSEヘッダーを送信
@@ -233,7 +240,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
 
         # 接続確認イベントを送信
         try:
-            self.wfile.write(b"event: connected\ndata: {\"status\":\"ok\"}\n\n")
+            self.wfile.write(b'event: connected\ndata: {"status":"ok"}\n\n')
             self.wfile.flush()
         except Exception:
             pass
@@ -344,20 +351,22 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
             # go2rtcのWebSocket APIにPTZコマンドを送信
             # WebSocketを使う代わりに、HTTP経由でWebSocket風のメッセージを送信
             # go2rtcはHTTP POSTでもPTZコマンドを受け付ける場合がある
-            
+
             # まず、go2rtcのストリーム情報を取得してWebSocket URLを構築
             # 実際にはWebSocketライブラリを使う必要があるが、
             # シンプルにするためにwebsocketモジュールを動的にインポート
-            
+
             success = self._send_ptz_via_websocket(stream_name, ptz_cmd)
-            
+
             if success:
                 response = json.dumps({"status": "ok", "cmd": ptz_cmd}).encode("utf-8")
                 self.send_response(200)
             else:
-                response = json.dumps({"status": "error", "message": "PTZ command failed"}).encode("utf-8")
+                response = json.dumps(
+                    {"status": "error", "message": "PTZ command failed"}
+                ).encode("utf-8")
                 self.send_response(500)
-            
+
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response)))
             self.end_headers()
@@ -372,12 +381,16 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         try:
             import websocket  # type: ignore[import-not-found]
         except ImportError:
-            logger.warning("websocket-clientがインストールされていません。pip install websocket-client を実行してください。")
+            logger.warning(
+                "websocket-clientがインストールされていません。pip install websocket-client を実行してください。"
+            )
             # フォールバック: HTTP POSTを試す
             return self._send_ptz_via_http(stream_name, ptz_cmd)
 
         # WebSocket URLを構築
-        ws_url = self.go2rtc_url.replace("https://", "wss://").replace("http://", "ws://")
+        ws_url = self.go2rtc_url.replace("https://", "wss://").replace(
+            "http://", "ws://"
+        )
         ws_url = f"{ws_url}/api/ws?src={stream_name}"
 
         logger.info(f"PTZ WebSocket接続: {ws_url}")
@@ -420,7 +433,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         """HTTP POST経由でPTZコマンドを送信（フォールバック）"""
         # go2rtcの一部バージョンではHTTP APIでPTZを受け付ける
         ptz_url = f"{self.go2rtc_url}/api/ptz?src={stream_name}&cmd={ptz_cmd}"
-        
+
         logger.info(f"PTZ HTTPリクエスト: {ptz_url}")
 
         try:
@@ -442,6 +455,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """マルチスレッド対応HTTPServer（SSE等の長時間接続をサポート）"""
+
     daemon_threads = True
 
 
@@ -484,7 +498,9 @@ def generate_self_signed_cert() -> tuple[str, str]:
         logger.error(f"証明書生成に失敗: {e.stderr.decode()}")
         raise RuntimeError("OpenSSLによる証明書生成に失敗しました")
     except FileNotFoundError:
-        raise RuntimeError("opensslコマンドが見つかりません。OpenSSLをインストールしてください。")
+        raise RuntimeError(
+            "opensslコマンドが見つかりません。OpenSSLをインストールしてください。"
+        )
 
 
 def run_server(
@@ -493,7 +509,7 @@ def run_server(
     open_browser: bool = True,
     cert_file: str | None = None,
     key_file: str | None = None,
-    go2rtc_url: str = "https://172.20.10.3",
+    go2rtc_url: str = "https://localhost",
     insecure: bool = False,
 ) -> None:
     """
@@ -536,7 +552,7 @@ def run_server(
     logger.info("=" * 60)
     logger.info("WebRTC Camera Zoom Viewer サーバーを起動しました")
     logger.info(f"URL: {url}")
-    logger.info(f"go2rtc: {go2rtc_url} (プロキシ経由)")
+    logger.info(f"go2rtc: {go2rtc_url} (ブラウザから直接接続)")
     if insecure:
         logger.info("SSL検証: 無効（自己署名証明書対応）")
     logger.info("=" * 60)
@@ -545,7 +561,9 @@ def run_server(
         logger.warning(
             "⚠️  自己署名証明書を使用しているため、ブラウザで警告が表示されます。"
         )
-        logger.warning("   「詳細設定」→「localhost にアクセスする」で続行してください。")
+        logger.warning(
+            "   「詳細設定」→「localhost にアクセスする」で続行してください。"
+        )
 
     logger.info("\n操作方法:")
     logger.info("  🔍 ズームボタン: 配信元カメラのズームイン/アウト")
@@ -604,8 +622,8 @@ def main() -> None:
     parser.add_argument(
         "--url",
         type=str,
-        default="https://172.20.10.3",
-        help="go2rtcサーバーのベースURL（デフォルト: https://172.20.10.3）",
+        default="https://localhost",
+        help="go2rtcサーバーのベースURL（デフォルト: https://localhost）",
     )
     parser.add_argument(
         "--insecure",
@@ -628,4 +646,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

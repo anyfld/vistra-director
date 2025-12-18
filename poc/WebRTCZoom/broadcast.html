@@ -347,13 +347,12 @@
                 <div class="input-row">
                     <input type="text" id="streamName" placeholder="ストリーム名" value="camera">
                 </div>
-                <input type="hidden" id="serverUrl" value="">
                 <button class="btn-primary" id="connectBtn" onclick="toggleBroadcast()" style="width: 100%;">
                     🎬 配信開始
                 </button>
                 <div class="error-message" id="errorMessage"></div>
                 <div class="info-text">
-                    配信を開始すると、プロキシサーバー経由でgo2rtcに映像を配信します<br>
+                    配信を開始すると、go2rtcに直接映像を配信します<br>
                     📡 受信側からのズーム指示を受け付けます
                 </div>
             </div>
@@ -371,6 +370,9 @@
         let zoomSupported = false;
         let currentFacingMode = 'user'; // 'user' = 内カメラ, 'environment' = 外カメラ
         let pollInterval = null; // ズームコマンドポーリング用
+        
+        // go2rtc直接接続用のURL（/api/configから取得）
+        let go2rtcUrl = 'https://localhost';
 
         // Elements
         const video = document.getElementById('localVideo');
@@ -384,13 +386,26 @@
         const zoomControlArea = document.getElementById('zoomControlArea');
         const zoomNotSupported = document.getElementById('zoomNotSupported');
 
+        // サーバー設定を取得
+        async function fetchConfig() {
+            try {
+                const res = await fetch('/api/config');
+                if (res.ok) {
+                    const config = await res.json();
+                    if (config.go2rtc_url) {
+                        go2rtcUrl = config.go2rtc_url;
+                        console.log('go2rtc URL:', go2rtcUrl);
+                    }
+                }
+            } catch (e) {
+                console.warn('Config fetch failed, using default:', e);
+            }
+        }
+
         // Load settings
         function loadSettings() {
             const savedStream = localStorage.getItem('broadcast_stream');
             if (savedStream) document.getElementById('streamName').value = savedStream;
-            
-            // プロキシサーバーのURLを自動設定（現在アクセスしているサーバー）
-            document.getElementById('serverUrl').value = window.location.origin;
         }
 
         function saveSettings() {
@@ -632,11 +647,10 @@
 
         // 配信開始
         async function startBroadcast() {
-            const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
             const streamName = document.getElementById('streamName').value.trim();
 
-            if (!serverUrl || !streamName) {
-                showError('サーバーURLとストリーム名を入力してください');
+            if (!streamName) {
+                showError('ストリーム名を入力してください');
                 return;
             }
 
@@ -692,10 +706,9 @@
                     }
                 });
 
-                // go2rtcのWHIP(publish)エンドポイントに送信
-                // dst= で配信（送信）
-                const whipUrl = `${serverUrl}/api/webrtc?dst=${encodeURIComponent(streamName)}`;
-                console.log('Publishing to:', whipUrl);
+                // go2rtcに直接接続（dst= で配信/送信）
+                const whipUrl = `${go2rtcUrl}/api/webrtc?dst=${encodeURIComponent(streamName)}`;
+                console.log('Publishing to go2rtc:', whipUrl);
 
                 const response = await fetch(whipUrl, {
                     method: 'POST',
@@ -753,8 +766,12 @@
         });
 
         // 初期化
-        loadSettings();
-        startCamera();
+        async function init() {
+            await fetchConfig();
+            loadSettings();
+            await startCamera();
+        }
+        init();
     </script>
 </body>
 </html>

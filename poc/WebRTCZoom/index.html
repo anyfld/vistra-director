@@ -237,6 +237,68 @@
             font-weight: 600;
         }
 
+        /* カメラズーム専用スタイル（配信側と統一） */
+        .camera-zoom-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .camera-zoom-panel .zoom-slider-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .camera-zoom-panel input[type="range"] {
+            height: 8px;
+            border-radius: 4px;
+        }
+
+        .camera-zoom-panel input[type="range"]::-webkit-slider-thumb {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .camera-zoom-panel .zoom-value {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #51cf66;
+        }
+
+        .camera-zoom-panel .zoom-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .camera-zoom-panel .zoom-buttons button {
+            flex: 1;
+            padding: 16px;
+            font-size: 1.5rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            color: #fff;
+        }
+
+        .camera-zoom-panel .zoom-buttons button:active {
+            transform: scale(0.95);
+        }
+
+        .camera-zoom-feedback {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.6);
+            text-align: center;
+            min-height: 20px;
+            margin-top: 8px;
+        }
+
         .zoom-buttons {
             display: flex;
             gap: 8px;
@@ -350,13 +412,17 @@
                     </div>
                 </div>
 
-                <div class="control-group" id="cameraZoomGroup" style="display: none;">
-                    <label>📹 カメラズーム（配信元を制御）</label>
-                    <div class="zoom-buttons">
-                        <button class="btn-camera" onclick="sendCameraZoom('out')">➖ 縮小</button>
-                        <button class="btn-camera" onclick="sendCameraZoom('in')">➕ 拡大</button>
+                <div class="camera-zoom-panel" id="cameraZoomGroup" style="display: none;">
+                    <label style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.7); margin-bottom: 12px; display: block;">🔍 カメラズーム（配信元を制御）</label>
+                    <div class="zoom-slider-row">
+                        <input type="range" id="cameraZoomSlider" min="1" max="10" step="0.5" value="1">
+                        <span class="zoom-value" id="cameraZoomValue">1.0x</span>
                     </div>
-                    <div id="cameraZoomFeedback" style="font-size: 0.75rem; color: rgba(255,255,255,0.6); text-align: center; min-height: 20px;"></div>
+                    <div class="zoom-buttons">
+                        <button onclick="sendCameraZoom('out')">➖</button>
+                        <button onclick="sendCameraZoom('in')">➕</button>
+                    </div>
+                    <div class="camera-zoom-feedback" id="cameraZoomFeedback"></div>
                 </div>
 
                 <div class="control-group">
@@ -413,6 +479,9 @@
         const zoomStep = 0.2;
         const panStep = 50;
 
+        // go2rtc直接接続用のURL（/api/configから取得）
+        let go2rtcUrl = 'https://localhost';
+
         const video = document.getElementById('remoteVideo');
         const videoWrapper = document.getElementById('videoWrapper');
         const zoomSlider = document.getElementById('zoomSlider');
@@ -421,6 +490,22 @@
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const connectBtn = document.getElementById('connectBtn');
+
+        // サーバー設定を取得
+        async function fetchConfig() {
+            try {
+                const res = await fetch('/api/config');
+                if (res.ok) {
+                    const config = await res.json();
+                    if (config.go2rtc_url) {
+                        go2rtcUrl = config.go2rtc_url;
+                        console.log('go2rtc URL:', go2rtcUrl);
+                    }
+                }
+            } catch (e) {
+                console.warn('Config fetch failed, using default:', e);
+            }
+        }
 
         function loadSettings() {
             const saved = localStorage.getItem('stream_name');
@@ -515,8 +600,11 @@
                     else pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') r(); };
                 });
 
-                // src= で視聴（受信）
-                const res = await fetch(`/api/whep?src=${encodeURIComponent(streamName)}`, {
+                // go2rtcに直接接続（src= で視聴/受信）
+                const webrtcUrl = `${go2rtcUrl}/api/webrtc?src=${encodeURIComponent(streamName)}`;
+                console.log('Connecting to go2rtc:', webrtcUrl);
+                
+                const res = await fetch(webrtcUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/sdp' },
                     body: pc.localDescription.sdp
@@ -546,9 +634,27 @@
             document.getElementById('cameraZoomGroup').style.display = 'none';
         }
 
+        // カメラズーム関連
+        let cameraZoomValue = 1.0;
+        const cameraZoomSlider = document.getElementById('cameraZoomSlider');
+        const cameraZoomValueDisplay = document.getElementById('cameraZoomValue');
+
+        function updateCameraZoomDisplay() {
+            cameraZoomValueDisplay.textContent = cameraZoomValue.toFixed(1) + 'x';
+            cameraZoomSlider.value = cameraZoomValue;
+        }
+
         async function sendCameraZoom(direction) {
             const streamName = document.getElementById('streamName').value.trim();
             const feedback = document.getElementById('cameraZoomFeedback');
+            
+            // ズーム値を更新（表示用）
+            if (direction === 'in') {
+                cameraZoomValue = Math.min(10, cameraZoomValue + 0.5);
+            } else {
+                cameraZoomValue = Math.max(1, cameraZoomValue - 0.5);
+            }
+            updateCameraZoomDisplay();
             
             try {
                 feedback.textContent = '送信中...';
@@ -559,7 +665,7 @@
                 });
                 
                 if (res.ok) {
-                    feedback.textContent = direction === 'in' ? '🔍 ズームイン送信' : '🔍 ズームアウト送信';
+                    feedback.textContent = direction === 'in' ? '🔍 ズームイン' : '🔍 ズームアウト';
                     feedback.style.color = '#51cf66';
                 } else {
                     feedback.textContent = '❌ 送信失敗';
@@ -570,7 +676,45 @@
                 feedback.style.color = '#fa5252';
             }
             
-            setTimeout(() => { feedback.textContent = ''; }, 2000);
+            setTimeout(() => { feedback.textContent = ''; }, 1500);
+        }
+
+        // スライダー操作でズーム送信
+        let lastSliderValue = 1.0;
+        cameraZoomSlider.addEventListener('input', (e) => {
+            const newValue = parseFloat(e.target.value);
+            cameraZoomValueDisplay.textContent = newValue.toFixed(1) + 'x';
+        });
+        
+        cameraZoomSlider.addEventListener('change', (e) => {
+            const newValue = parseFloat(e.target.value);
+            const diff = newValue - lastSliderValue;
+            
+            if (Math.abs(diff) >= 0.5) {
+                const direction = diff > 0 ? 'in' : 'out';
+                const steps = Math.round(Math.abs(diff) / 0.5);
+                
+                // 複数ステップ送信
+                for (let i = 0; i < steps; i++) {
+                    setTimeout(() => {
+                        sendCameraZoomDirect(direction);
+                    }, i * 100);
+                }
+            }
+            
+            lastSliderValue = newValue;
+            cameraZoomValue = newValue;
+        });
+
+        async function sendCameraZoomDirect(direction) {
+            const streamName = document.getElementById('streamName').value.trim();
+            try {
+                await fetch(`/api/zoom/command?stream=${encodeURIComponent(streamName)}&cmd=zoom_${direction}`, {
+                    method: 'POST'
+                });
+            } catch (e) {
+                console.error('Zoom command error:', e);
+            }
         }
 
         videoWrapper.addEventListener('wheel', (e) => { e.preventDefault(); setZoom(currentZoom + (e.deltaY > 0 ? -zoomStep : zoomStep)); }, { passive: false });
@@ -582,8 +726,13 @@
         document.addEventListener('mousemove', (e) => { if (dragging) { panX = startPanX + e.clientX - dragX; panY = startPanY + e.clientY - dragY; applyTransform(); } });
         document.addEventListener('mouseup', () => dragging = false);
 
-        loadSettings();
-        updateZoomDisplay();
+        // 初期化
+        async function init() {
+            await fetchConfig();
+            loadSettings();
+            updateZoomDisplay();
+        }
+        init();
     </script>
 </body>
 </html>
