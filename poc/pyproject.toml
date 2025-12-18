@@ -8,3 +8,6 @@ dependencies = []
 
 [project.scripts]
 poc = "run_all:main"
+
+[tool.ty.src]
+exclude = ["ObjectCrop/", "WebRTCMotionDetection/"]
