@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Camera Zoom Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 16px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #6c757d;
+            transition: background 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background: #28a745;
+            box-shadow: 0 0 10px #28a745;
+        }
+
+        .status-dot.connecting {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        .status-dot.error {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .video-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .video-wrapper {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        .video-wrapper:active {
+            cursor: grabbing;
+        }
+
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transform-origin: center center;
+            transition: transform 0.1s ease-out;
+        }
+
+        .control-panel {
+            width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: 500;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 0.875rem;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4dabf7;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4dabf7 0%, #339af0 100%);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(77, 171, 247, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #fa5252 0%, #e03131 100%);
+            color: #fff;
+        }
+
+        .btn-camera {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            color: #fff;
+            flex: 1;
+            padding: 14px;
+            font-size: 1rem;
+        }
+
+        .btn-camera:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(64, 192, 87, 0.4);
+        }
+
+        .zoom-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4dabf7 0%, #339af0 100%);
+            cursor: pointer;
+        }
+
+        .zoom-value {
+            min-width: 50px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .zoom-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .zoom-buttons button {
+            flex: 1;
+            padding: 12px 8px;
+        }
+
+        .position-control {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+
+        .position-control button {
+            padding: 12px;
+        }
+
+        .position-control button:nth-child(5) {
+            background: linear-gradient(135deg, #fab005 0%, #f59f00 100%);
+        }
+
+        .info-panel {
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            line-height: 1.6;
+        }
+
+        .info-panel p {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .overlay-info {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            pointer-events: none;
+        }
+
+        .broadcast-link {
+            padding: 12px;
+            background: rgba(81, 207, 102, 0.1);
+            border: 1px solid rgba(81, 207, 102, 0.3);
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .btn-broadcast {
+            display: block;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .broadcast-hint {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.5);
+            line-height: 1.4;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            .control-panel {
+                width: 100%;
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 WebRTC Camera Viewer</h1>
+            <div class="connection-status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">未接続</span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="video-container">
+                <div class="video-wrapper" id="videoWrapper">
+                    <video id="remoteVideo" autoplay playsinline muted></video>
+                </div>
+                <div class="overlay-info">
+                    <span id="zoomInfo">表示ズーム: 1.0x</span>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <div class="control-group">
+                    <label>ストリーム設定</label>
+                    <div class="input-group">
+                        <input type="text" id="streamName" placeholder="stream name" value="camera">
+                        <button class="btn-primary" id="connectBtn" onclick="toggleConnection()">接続</button>
+                    </div>
+                </div>
+
+                <div class="control-group" id="cameraZoomGroup" style="display: none;">
+                    <label>📹 カメラズーム（配信元を制御）</label>
+                    <div class="zoom-buttons">
+                        <button class="btn-camera" onclick="sendCameraZoom('out')">➖ 縮小</button>
+                        <button class="btn-camera" onclick="sendCameraZoom('in')">➕ 拡大</button>
+                    </div>
+                    <div id="cameraZoomFeedback" style="font-size: 0.75rem; color: rgba(255,255,255,0.6); text-align: center; min-height: 20px;"></div>
+                </div>
+
+                <div class="control-group">
+                    <label>🔎 表示ズーム（デジタル）</label>
+                    <div class="zoom-slider-container">
+                        <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1">
+                        <span class="zoom-value" id="zoomValue">1.0x</span>
+                    </div>
+                    <div class="zoom-buttons">
+                        <button class="btn-secondary" onclick="zoomOut()">➖</button>
+                        <button class="btn-secondary" onclick="zoomIn()">➕</button>
+                        <button class="btn-secondary" onclick="resetZoom()">↺</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>↔️ パン（表示位置）</label>
+                    <div class="position-control">
+                        <button class="btn-secondary" onclick="pan('nw')">↖</button>
+                        <button class="btn-secondary" onclick="pan('n')">⬆</button>
+                        <button class="btn-secondary" onclick="pan('ne')">↗</button>
+                        <button class="btn-secondary" onclick="pan('w')">⬅</button>
+                        <button class="btn-secondary" onclick="resetPosition()">●</button>
+                        <button class="btn-secondary" onclick="pan('e')">➡</button>
+                        <button class="btn-secondary" onclick="pan('sw')">↙</button>
+                        <button class="btn-secondary" onclick="pan('s')">⬇</button>
+                        <button class="btn-secondary" onclick="pan('se')">↘</button>
+                    </div>
+                </div>
+
+                <div class="broadcast-link">
+                    <a href="/broadcast.html" target="_blank" class="btn-broadcast">
+                        📱 配信側ページを開く（ズーム制御付き）
+                    </a>
+                    <p class="broadcast-hint">
+                        配信元のスマホでこのリンクを開くと<br>カメラズームを制御できます
+                    </p>
+                </div>
+
+                <div class="info-panel">
+                    <p>🖱️ <strong>ホイール</strong>: 表示ズーム</p>
+                    <p>✋ <strong>ドラッグ</strong>: パン移動</p>
+                    <p>🔲 <strong>ダブルクリック</strong>: リセット</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pc = null;
+        let isConnected = false;
+        let currentZoom = 1.0;
+        let panX = 0, panY = 0;
+        const zoomStep = 0.2;
+        const panStep = 50;
+
+        const video = document.getElementById('remoteVideo');
+        const videoWrapper = document.getElementById('videoWrapper');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValueDisplay = document.getElementById('zoomValue');
+        const zoomInfoDisplay = document.getElementById('zoomInfo');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const connectBtn = document.getElementById('connectBtn');
+
+        function loadSettings() {
+            const saved = localStorage.getItem('stream_name');
+            if (saved) document.getElementById('streamName').value = saved;
+        }
+
+        function saveSettings() {
+            localStorage.setItem('stream_name', document.getElementById('streamName').value);
+        }
+
+        function updateStatus(status, text) {
+            statusDot.className = 'status-dot ' + status;
+            statusText.textContent = text;
+        }
+
+        function updateZoomDisplay() {
+            zoomValueDisplay.textContent = currentZoom.toFixed(1) + 'x';
+            zoomInfoDisplay.textContent = '表示ズーム: ' + currentZoom.toFixed(1) + 'x';
+            zoomSlider.value = currentZoom;
+        }
+
+        function applyTransform() {
+            const maxPan = (currentZoom - 1) * 50;
+            panX = Math.max(-maxPan, Math.min(maxPan, panX));
+            panY = Math.max(-maxPan, Math.min(maxPan, panY));
+            video.style.transform = `scale(${currentZoom}) translate(${panX / currentZoom}px, ${panY / currentZoom}px)`;
+            updateZoomDisplay();
+        }
+
+        function setZoom(value) {
+            currentZoom = Math.max(1, Math.min(10, value));
+            applyTransform();
+        }
+
+        function zoomIn() { setZoom(currentZoom + zoomStep); }
+        function zoomOut() { setZoom(currentZoom - zoomStep); }
+        function resetZoom() { setZoom(1.0); resetPosition(); }
+
+        function pan(dir) {
+            const step = panStep / currentZoom;
+            if (dir.includes('n')) panY += step;
+            if (dir.includes('s')) panY -= step;
+            if (dir.includes('w')) panX += step;
+            if (dir.includes('e')) panX -= step;
+            applyTransform();
+        }
+
+        function resetPosition() { panX = 0; panY = 0; applyTransform(); }
+
+        async function toggleConnection() {
+            if (isConnected) disconnect();
+            else await connect();
+        }
+
+        async function connect() {
+            const streamName = document.getElementById('streamName').value.trim();
+            if (!streamName) { alert('ストリーム名を入力'); return; }
+
+            saveSettings();
+            updateStatus('connecting', '接続中...');
+            connectBtn.textContent = '接続中...';
+            connectBtn.disabled = true;
+
+            try {
+                pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                pc.addTransceiver('video', { direction: 'recvonly' });
+
+                pc.ontrack = (e) => { if (e.track.kind === 'video') video.srcObject = e.streams[0]; };
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'connected') {
+                        updateStatus('connected', '接続済み');
+                        isConnected = true;
+                        connectBtn.textContent = '切断';
+                        connectBtn.disabled = false;
+                        connectBtn.className = 'btn-danger';
+                        document.getElementById('cameraZoomGroup').style.display = 'block';
+                    } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+                        updateStatus('error', '接続エラー');
+                        isConnected = false;
+                        connectBtn.textContent = '接続';
+                        connectBtn.disabled = false;
+                        connectBtn.className = 'btn-primary';
+                        document.getElementById('cameraZoomGroup').style.display = 'none';
+                    }
+                };
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                await new Promise(r => {
+                    if (pc.iceGatheringState === 'complete') r();
+                    else pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') r(); };
+                });
+
+                // src= で視聴（受信）
+                const res = await fetch(`/api/whep?src=${encodeURIComponent(streamName)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/sdp' },
+                    body: pc.localDescription.sdp
+                });
+
+                if (!res.ok) throw new Error(`Error: ${res.status}`);
+
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: await res.text() }));
+
+            } catch (e) {
+                console.error(e);
+                updateStatus('error', 'エラー');
+                connectBtn.textContent = '接続';
+                connectBtn.disabled = false;
+                connectBtn.className = 'btn-primary';
+                if (pc) { pc.close(); pc = null; }
+            }
+        }
+
+        function disconnect() {
+            if (pc) { pc.close(); pc = null; }
+            video.srcObject = null;
+            isConnected = false;
+            updateStatus('', '未接続');
+            connectBtn.textContent = '接続';
+            connectBtn.className = 'btn-primary';
+            document.getElementById('cameraZoomGroup').style.display = 'none';
+        }
+
+        async function sendCameraZoom(direction) {
+            const streamName = document.getElementById('streamName').value.trim();
+            const feedback = document.getElementById('cameraZoomFeedback');
+            
+            try {
+                feedback.textContent = '送信中...';
+                feedback.style.color = 'rgba(255,255,255,0.6)';
+                
+                const res = await fetch(`/api/zoom/command?stream=${encodeURIComponent(streamName)}&cmd=zoom_${direction}`, {
+                    method: 'POST'
+                });
+                
+                if (res.ok) {
+                    feedback.textContent = direction === 'in' ? '🔍 ズームイン送信' : '🔍 ズームアウト送信';
+                    feedback.style.color = '#51cf66';
+                } else {
+                    feedback.textContent = '❌ 送信失敗';
+                    feedback.style.color = '#fa5252';
+                }
+            } catch (e) {
+                feedback.textContent = '❌ エラー';
+                feedback.style.color = '#fa5252';
+            }
+            
+            setTimeout(() => { feedback.textContent = ''; }, 2000);
+        }
+
+        videoWrapper.addEventListener('wheel', (e) => { e.preventDefault(); setZoom(currentZoom + (e.deltaY > 0 ? -zoomStep : zoomStep)); }, { passive: false });
+        zoomSlider.addEventListener('input', (e) => setZoom(parseFloat(e.target.value)));
+        videoWrapper.addEventListener('dblclick', resetZoom);
+
+        let dragging = false, dragX, dragY, startPanX, startPanY;
+        videoWrapper.addEventListener('mousedown', (e) => { if (currentZoom > 1) { dragging = true; dragX = e.clientX; dragY = e.clientY; startPanX = panX; startPanY = panY; } });
+        document.addEventListener('mousemove', (e) => { if (dragging) { panX = startPanX + e.clientX - dragX; panY = startPanY + e.clientY - dragY; applyTransform(); } });
+        document.addEventListener('mouseup', () => dragging = false);
+
+        loadSettings();
+        updateZoomDisplay();
+    </script>
+</body>
+</html>
+

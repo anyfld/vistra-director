@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📹 カメラ配信（ズーム制御付き）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #fff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 12px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            font-size: 0.75rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6c757d;
+        }
+
+        .status-dot.live {
+            background: #fa5252;
+            animation: blink 1s infinite;
+        }
+
+        .status-dot.ready {
+            background: #51cf66;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .video-section {
+            flex: 1;
+            position: relative;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-overlay {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            right: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .zoom-info {
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .zoom-control-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .zoom-label {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .zoom-slider-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .zoom-value {
+            min-width: 50px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #51cf66;
+        }
+
+        .zoom-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .zoom-buttons button {
+            flex: 1;
+            padding: 16px;
+            font-size: 1.5rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-zoom {
+            background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+            color: #fff;
+        }
+
+        .btn-zoom:active {
+            transform: scale(0.95);
+        }
+
+        .btn-zoom:disabled {
+            opacity: 0.5;
+        }
+
+        .connection-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .connection-label {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 10px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 0.875rem;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4dabf7;
+        }
+
+        .btn-primary {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #4dabf7 0%, #339af0 100%);
+            color: #fff;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #fa5252 0%, #e03131 100%);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+        }
+
+        .camera-select {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .camera-select button {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .camera-select button.active {
+            background: linear-gradient(135deg, #4dabf7 0%, #339af0 100%);
+            border-color: transparent;
+        }
+
+        .info-text {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.5);
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        .error-message {
+            padding: 10px;
+            background: rgba(250, 82, 82, 0.2);
+            border: 1px solid rgba(250, 82, 82, 0.5);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #fa5252;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .zoom-not-supported {
+            padding: 12px;
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #ffc107;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📹 カメラ配信</h1>
+            <div class="status-badge">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">準備中</span>
+            </div>
+        </header>
+
+        <div class="video-section">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-overlay">
+                <div class="zoom-info" id="zoomInfo">ズーム: 1.0x</div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <!-- ズーム制御 -->
+            <div class="zoom-control-panel">
+                <div class="zoom-label">🔍 カメラズーム</div>
+                <div id="zoomControlArea">
+                    <div class="zoom-slider-row">
+                        <input type="range" id="zoomSlider" min="1" max="10" step="0.1" value="1">
+                        <span class="zoom-value" id="zoomValue">1.0x</span>
+                    </div>
+                    <div class="zoom-buttons">
+                        <button class="btn-zoom" id="zoomOutBtn" onclick="changeZoom(-0.5)">➖</button>
+                        <button class="btn-zoom" id="zoomInBtn" onclick="changeZoom(0.5)">➕</button>
+                    </div>
+                </div>
+                <div class="zoom-not-supported" id="zoomNotSupported" style="display: none;">
+                    ⚠️ このカメラはズームをサポートしていません
+                </div>
+            </div>
+
+            <!-- 接続設定 -->
+            <div class="connection-panel">
+                <div class="connection-label">📡 配信設定</div>
+                <div class="camera-select">
+                    <button id="btnFront" class="active" onclick="switchCamera('user')">🤳 内カメラ</button>
+                    <button id="btnBack" onclick="switchCamera('environment')">📷 外カメラ</button>
+                </div>
+                <div class="input-row">
+                    <input type="text" id="streamName" placeholder="ストリーム名" value="camera">
+                </div>
+                <input type="hidden" id="serverUrl" value="">
+                <button class="btn-primary" id="connectBtn" onclick="toggleBroadcast()" style="width: 100%;">
+                    🎬 配信開始
+                </button>
+                <div class="error-message" id="errorMessage"></div>
+                <div class="info-text">
+                    配信を開始すると、プロキシサーバー経由でgo2rtcに映像を配信します<br>
+                    📡 受信側からのズーム指示を受け付けます
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let localStream = null;
+        let pc = null;
+        let isBroadcasting = false;
+        let currentZoom = 1.0;
+        let minZoom = 1.0;
+        let maxZoom = 1.0;
+        let zoomSupported = false;
+        let currentFacingMode = 'user'; // 'user' = 内カメラ, 'environment' = 外カメラ
+        let pollInterval = null; // ズームコマンドポーリング用
+
+        // Elements
+        const video = document.getElementById('localVideo');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomValue = document.getElementById('zoomValue');
+        const zoomInfo = document.getElementById('zoomInfo');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const connectBtn = document.getElementById('connectBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const zoomControlArea = document.getElementById('zoomControlArea');
+        const zoomNotSupported = document.getElementById('zoomNotSupported');
+
+        // Load settings
+        function loadSettings() {
+            const savedStream = localStorage.getItem('broadcast_stream');
+            if (savedStream) document.getElementById('streamName').value = savedStream;
+            
+            // プロキシサーバーのURLを自動設定（現在アクセスしているサーバー）
+            document.getElementById('serverUrl').value = window.location.origin;
+        }
+
+        function saveSettings() {
+            localStorage.setItem('broadcast_stream', document.getElementById('streamName').value);
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        function updateStatus(status, text) {
+            statusDot.className = 'status-dot ' + status;
+            statusText.textContent = text;
+        }
+
+        function updateZoomDisplay() {
+            zoomValue.textContent = currentZoom.toFixed(1) + 'x';
+            zoomInfo.textContent = 'ズーム: ' + currentZoom.toFixed(1) + 'x';
+            zoomSlider.value = currentZoom;
+        }
+
+        // カメラを起動
+        async function startCamera() {
+            try {
+                // 既存のストリームを停止
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
+                    video: {
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                };
+
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = localStream;
+
+                // ズームサポートをチェック
+                await checkZoomSupport();
+
+                updateStatus('ready', 'カメラ準備完了');
+                return true;
+            } catch (error) {
+                console.error('Camera error:', error);
+                showError('カメラの起動に失敗しました: ' + error.message);
+                updateStatus('', 'エラー');
+                return false;
+            }
+        }
+
+        // ズームサポートをチェック
+        async function checkZoomSupport() {
+            if (!localStream) return;
+
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (!videoTrack) return;
+
+            try {
+                const capabilities = videoTrack.getCapabilities();
+                console.log('Camera capabilities:', capabilities);
+
+                if (capabilities.zoom) {
+                    zoomSupported = true;
+                    minZoom = capabilities.zoom.min || 1;
+                    maxZoom = capabilities.zoom.max || 1;
+                    currentZoom = videoTrack.getSettings().zoom || 1;
+
+                    zoomSlider.min = minZoom;
+                    zoomSlider.max = maxZoom;
+                    zoomSlider.value = currentZoom;
+
+                    zoomControlArea.style.display = 'block';
+                    zoomNotSupported.style.display = 'none';
+
+                    console.log(`Zoom supported: ${minZoom}x - ${maxZoom}x`);
+                } else {
+                    zoomSupported = false;
+                    zoomControlArea.style.display = 'none';
+                    zoomNotSupported.style.display = 'block';
+                    console.log('Zoom not supported');
+                }
+
+                updateZoomDisplay();
+            } catch (error) {
+                console.error('Zoom check error:', error);
+                zoomSupported = false;
+                zoomControlArea.style.display = 'none';
+                zoomNotSupported.style.display = 'block';
+            }
+        }
+
+        // ズームを変更
+        async function setZoom(value) {
+            if (!zoomSupported || !localStream) return;
+
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (!videoTrack) return;
+
+            currentZoom = Math.max(minZoom, Math.min(maxZoom, value));
+
+            try {
+                await videoTrack.applyConstraints({
+                    advanced: [{ zoom: currentZoom }]
+                });
+                updateZoomDisplay();
+                console.log('Zoom set to:', currentZoom);
+            } catch (error) {
+                console.error('Zoom error:', error);
+                showError('ズーム変更に失敗しました');
+            }
+        }
+
+        function changeZoom(delta) {
+            setZoom(currentZoom + delta);
+        }
+
+        // SSEでサーバーからのズームコマンドをリアルタイム受信
+        let eventSource = null;
+
+        function startZoomPolling() {
+            const streamName = document.getElementById('streamName').value.trim();
+            
+            // SSE接続を開始
+            const sseUrl = `/api/zoom/stream?stream=${encodeURIComponent(streamName)}`;
+            console.log('SSE接続開始:', sseUrl);
+            
+            eventSource = new EventSource(sseUrl);
+            
+            eventSource.onopen = () => {
+                console.log('SSE接続確立');
+            };
+            
+            eventSource.addEventListener('connected', (e) => {
+                console.log('SSE connected:', e.data);
+            });
+            
+            eventSource.addEventListener('zoom', (e) => {
+                try {
+                    const cmd = JSON.parse(e.data);
+                    console.log('Remote zoom command (SSE):', cmd);
+                    
+                    if (cmd.cmd === 'zoom_in') {
+                        setZoom(currentZoom + 0.5);
+                        showRemoteCommand('🔍 リモートズームイン');
+                    } else if (cmd.cmd === 'zoom_out') {
+                        setZoom(currentZoom - 0.5);
+                        showRemoteCommand('🔍 リモートズームアウト');
+                    }
+                } catch (err) {
+                    console.error('SSE parse error:', err);
+                }
+            });
+            
+            eventSource.onerror = (e) => {
+                console.error('SSE error:', e);
+                // 接続が切れた場合、ポーリングにフォールバック
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    console.log('SSE closed, falling back to polling');
+                    eventSource = null;
+                    startPollingFallback();
+                }
+            };
+        }
+
+        // ポーリングフォールバック（SSEが使えない場合）
+        function startPollingFallback() {
+            const streamName = document.getElementById('streamName').value.trim();
+            
+            pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/zoom/poll?stream=${encodeURIComponent(streamName)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.commands && data.commands.length > 0) {
+                            for (const cmd of data.commands) {
+                                if (cmd.cmd === 'zoom_in') {
+                                    setZoom(currentZoom + 0.5);
+                                    showRemoteCommand('🔍 リモートズームイン');
+                                } else if (cmd.cmd === 'zoom_out') {
+                                    setZoom(currentZoom - 0.5);
+                                    showRemoteCommand('🔍 リモートズームアウト');
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Zoom poll error:', e);
+                }
+            }, 100); // 100msごとにポーリング（フォールバック時）
+        }
+
+        function stopZoomPolling() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        function showRemoteCommand(msg) {
+            const info = document.getElementById('zoomInfo');
+            const originalText = info.textContent;
+            info.textContent = msg;
+            info.style.color = '#51cf66';
+            setTimeout(() => {
+                info.style.color = '';
+                updateZoomDisplay();
+            }, 1500);
+        }
+
+        // カメラ切り替え
+        async function switchCamera(facingMode) {
+            currentFacingMode = facingMode;
+            
+            // ボタンの状態を更新
+            document.getElementById('btnFront').classList.toggle('active', facingMode === 'user');
+            document.getElementById('btnBack').classList.toggle('active', facingMode === 'environment');
+
+            // 配信中の場合は再接続が必要
+            if (isBroadcasting) {
+                await stopBroadcast();
+                await startCamera();
+                await startBroadcast();
+            } else {
+                await startCamera();
+            }
+        }
+
+        // 配信開始
+        async function startBroadcast() {
+            const serverUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+            const streamName = document.getElementById('streamName').value.trim();
+
+            if (!serverUrl || !streamName) {
+                showError('サーバーURLとストリーム名を入力してください');
+                return;
+            }
+
+            if (!localStream) {
+                showError('カメラが起動していません');
+                return;
+            }
+
+            saveSettings();
+            updateStatus('', '接続中...');
+            connectBtn.disabled = true;
+
+            try {
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // ローカルストリームを追加
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+
+                pc.onconnectionstatechange = () => {
+                    console.log('Connection state:', pc.connectionState);
+                    if (pc.connectionState === 'connected') {
+                        isBroadcasting = true;
+                        updateStatus('live', '配信中');
+                        connectBtn.textContent = '⏹️ 配信停止';
+                        connectBtn.className = 'btn-primary btn-danger';
+                        connectBtn.disabled = false;
+                        // リモートズームコマンドのポーリング開始
+                        startZoomPolling();
+                    } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+                        stopBroadcast();
+                        showError('接続が切断されました');
+                    }
+                };
+
+                // Offer作成
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // ICE収集を待つ
+                await new Promise((resolve) => {
+                    if (pc.iceGatheringState === 'complete') {
+                        resolve();
+                    } else {
+                        pc.onicegatheringstatechange = () => {
+                            if (pc.iceGatheringState === 'complete') {
+                                resolve();
+                            }
+                        };
+                    }
+                });
+
+                // go2rtcのWHIP(publish)エンドポイントに送信
+                // dst= で配信（送信）
+                const whipUrl = `${serverUrl}/api/webrtc?dst=${encodeURIComponent(streamName)}`;
+                console.log('Publishing to:', whipUrl);
+
+                const response = await fetch(whipUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/sdp' },
+                    body: pc.localDescription.sdp
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const answerSdp = await response.text();
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: answerSdp
+                }));
+
+                console.log('Broadcast started');
+
+            } catch (error) {
+                console.error('Broadcast error:', error);
+                showError('配信開始に失敗しました: ' + error.message);
+                stopBroadcast();
+            }
+        }
+
+        // 配信停止
+        async function stopBroadcast() {
+            // ポーリング停止
+            stopZoomPolling();
+            
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            isBroadcasting = false;
+            updateStatus('ready', 'カメラ準備完了');
+            connectBtn.textContent = '🎬 配信開始';
+            connectBtn.className = 'btn-primary';
+            connectBtn.disabled = false;
+        }
+
+        // 配信切り替え
+        async function toggleBroadcast() {
+            if (isBroadcasting) {
+                await stopBroadcast();
+            } else {
+                await startBroadcast();
+            }
+        }
+
+        // スライダーイベント
+        zoomSlider.addEventListener('input', (e) => {
+            setZoom(parseFloat(e.target.value));
+        });
+
+        // 初期化
+        loadSettings();
+        startCamera();
+    </script>
+</body>
+</html>
+

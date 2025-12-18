@@ -1,0 +1,13 @@
+[project]
+name = "webrtc-zoom"
+version = "0.1.0"
+description = "WebRTC Camera Zoom Viewer - go2rtcの映像をズームイン/アウトできるWebビューア（配信元カメラ制御対応）"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "websocket-client>=1.7.0",
+]
+
+[project.scripts]
+webrtc-zoom = "main:main"
+
