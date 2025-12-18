@@ -15,6 +15,7 @@ import ssl
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -120,7 +121,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         for param in query.split("&"):
             if "=" in param:
                 key, value = param.split("=", 1)
-                params[key] = urllib.request.unquote(value)
+                params[key] = urllib.parse.unquote(value)
 
         stream_name = params.get("stream", "camera")
         cmd = params.get("cmd", "")
@@ -187,7 +188,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         for param in query.split("&"):
             if "=" in param:
                 key, value = param.split("=", 1)
-                params[key] = urllib.request.unquote(value)
+                params[key] = urllib.parse.unquote(value)
 
         stream_name = params.get("stream", "camera")
 
@@ -211,7 +212,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         for param in query.split("&"):
             if "=" in param:
                 key, value = param.split("=", 1)
-                params[key] = urllib.request.unquote(value)
+                params[key] = urllib.parse.unquote(value)
 
         stream_name = params.get("stream", "camera")
         
@@ -328,7 +329,7 @@ class WHEPProxyHandler(SimpleHTTPRequestHandler):
         for param in query.split("&"):
             if "=" in param:
                 key, value = param.split("=", 1)
-                params[key] = urllib.request.unquote(value)
+                params[key] = urllib.parse.unquote(value)
 
         stream_name = params.get("src", "camera")
         ptz_cmd = params.get("cmd", "")
