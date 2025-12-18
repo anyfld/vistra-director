@@ -1,0 +1,14 @@
+[project]
+name = "object-crop"
+version = "0.1.0"
+description = "WebRTCMotionDetectionの映像をクロップしてAI用画像を生成するプログラム"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+]
+
+[project.scripts]
+object-crop = "main:main"

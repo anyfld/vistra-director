@@ -1,0 +1,10 @@
+[project]
+name = "poc-launcher"
+version = "0.1.0"
+description = "POC統合ランチャー - WebRTCMotionDetectionとObjectCropを同時起動"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+poc = "run_all:main"
