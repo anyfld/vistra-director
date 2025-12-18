@@ -64,7 +64,7 @@ def run_all(args: argparse.Namespace) -> None:
         if args.verbose:
             webrtc_cmd.append("--verbose")
 
-        print(f"[WebRTCMotionDetection] 起動中...")
+        print("[WebRTCMotionDetection] 起動中...")
         print(f"  コマンド: {' '.join(webrtc_cmd)}")
         print(f"  ディレクトリ: {webrtc_dir}")
 
@@ -106,7 +106,7 @@ def run_all(args: argparse.Namespace) -> None:
         if args.verbose:
             crop_cmd.append("--verbose")
 
-        print(f"[ObjectCrop] 起動中...")
+        print("[ObjectCrop] 起動中...")
         print(f"  コマンド: {' '.join(crop_cmd)}")
         print(f"  ディレクトリ: {crop_dir}")
 

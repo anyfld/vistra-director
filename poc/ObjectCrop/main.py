@@ -8,9 +8,7 @@ WebRTCMotionDetectionの映像をクロップしてAI用画像を生成するプ
 import argparse
 import asyncio
 import logging
-import os
 import struct
-import time
 from datetime import datetime
 from multiprocessing import shared_memory
 from pathlib import Path
@@ -39,25 +37,95 @@ MAX_FRAME_SIZE = 1920 * 1080 * 3
 
 # YOLOv8のクラス名（COCO dataset）
 YOLO_CLASS_NAMES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
-    "toothbrush"
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 
 class Detection:
     """検出結果を表すクラス"""
 
-    def __init__(self, x1: int, y1: int, x2: int, y2: int, class_id: int, confidence: float):
+    def __init__(
+        self, x1: int, y1: int, x2: int, y2: int, class_id: int, confidence: float
+    ):
         self.x1 = x1
         self.y1 = y1
         self.x2 = x2
@@ -252,10 +320,11 @@ class FrameSubscriber:
             return None
 
         try:
+            assert self.shm.buf is not None  # 型チェッカー用
             # メタデータを読み取り
             metadata = bytes(self.shm.buf[:METADATA_SIZE])
-            width, height, channels, timestamp, sequence, num_detections = struct.unpack(
-                "<IIIdQI", metadata
+            width, height, channels, timestamp, sequence, num_detections = (
+                struct.unpack("<IIIdQI", metadata)
             )
 
             # 新しいフレームがない場合はスキップ
@@ -275,7 +344,9 @@ class FrameSubscriber:
             offset = METADATA_SIZE
             for _ in range(min(num_detections, MAX_DETECTIONS)):
                 det_data = bytes(self.shm.buf[offset : offset + DETECTION_SIZE])
-                x1, y1, x2, y2, class_id, confidence = struct.unpack("<IIIIIf", det_data)
+                x1, y1, x2, y2, class_id, confidence = struct.unpack(
+                    "<IIIIIf", det_data
+                )
                 detections.append(Detection(x1, y1, x2, y2, class_id, confidence))
                 offset += DETECTION_SIZE
 
@@ -400,9 +471,7 @@ class ImageCropper:
             img.save(filepath, "PNG")
         else:
             filepath = self.output_dir / f"{filename}.jpg"
-            cv2.imwrite(
-                str(filepath), frame, [cv2.IMWRITE_JPEG_QUALITY, self.quality]
-            )
+            cv2.imwrite(str(filepath), frame, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
 
         return filepath
 
@@ -473,7 +542,9 @@ class ObjectCropper:
         """メイン実行ループ"""
         logger.info("ObjectCropperを開始します...")
         logger.info("モード: 新しいオブジェクト検出時にクロップ")
-        logger.info(f"IoU閾値: {self.tracker.iou_threshold}, タイムアウト: {self.tracker.timeout}秒")
+        logger.info(
+            f"IoU閾値: {self.tracker.iou_threshold}, タイムアウト: {self.tracker.timeout}秒"
+        )
 
         # 共有メモリに接続
         await self.subscriber.connect()

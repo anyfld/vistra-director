@@ -24,18 +24,86 @@ from ultralytics import YOLO
 
 # YOLOv8のクラス名（COCO dataset）
 YOLO_CLASS_NAMES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
-    "toothbrush"
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 # 共有メモリの設定
@@ -128,6 +196,7 @@ class FramePublisher:
         )
 
         # 共有メモリに書き込み
+        assert self.shm.buf is not None  # 型チェッカー用
         offset = 0
 
         # 1. メタデータ
@@ -563,9 +632,15 @@ class WebRTCObjectDetector:
         dt = datetime.fromtimestamp(timestamp)
         saved_count = 0
 
-        for i, (x1, y1, x2, y2, class_id, confidence) in enumerate(self.latest_detections):
+        for i, (x1, y1, x2, y2, class_id, confidence) in enumerate(
+            self.latest_detections
+        ):
             # クラス名を取得
-            class_name_raw = YOLO_CLASS_NAMES[class_id] if 0 <= class_id < len(YOLO_CLASS_NAMES) else f"class_{class_id}"
+            class_name_raw = (
+                YOLO_CLASS_NAMES[class_id]
+                if 0 <= class_id < len(YOLO_CLASS_NAMES)
+                else f"class_{class_id}"
+            )
             class_name = class_name_raw.replace(" ", "_")
 
             # パディングを追加してクロップ
@@ -673,7 +748,9 @@ class WebRTCObjectDetector:
                 logger.info("スペースキーが押されました - 手動クロップを実行")
                 count = self._manual_crop_objects()
                 if count > 0:
-                    logger.info(f"手動クロップ完了: {count}個のオブジェクトを保存しました")
+                    logger.info(
+                        f"手動クロップ完了: {count}個のオブジェクトを保存しました"
+                    )
 
             # 表示ループの待機時間を最小化
             await asyncio.sleep(0.001)
