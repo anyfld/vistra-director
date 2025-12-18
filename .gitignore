@@ -4,6 +4,10 @@
 # YOLOv8検知結果の出力ディレクトリ
 runs/
 
+# POC: クロップ出力ディレクトリ
+cropped_images/
+manual_crops/
+
 # 検知結果の画像・動画ファイル（プレフィックス付き）
 detected_*
 
@@ -34,7 +38,7 @@ MANIFEST
 
 # 仮想環境
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/
