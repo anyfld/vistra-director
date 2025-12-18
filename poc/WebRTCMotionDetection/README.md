@@ -50,6 +50,7 @@ python main.py --stream <ストリーム名>
 | `--model` | `yolov8n.pt` | YOLOv8モデル (n/s/m/l/x) |
 | `--no-motion` | - | 動体検知を無効にする |
 | `--confidence` | `0.5` | 物体検知の信頼度閾値 (0.0-1.0) |
+| `--share-frame` | - | 共有メモリでフレームを外部プロセスに公開（ObjectCrop連携用） |
 | `--verbose` | - | 詳細なログを出力する |
 
 ### 使用例
@@ -69,7 +70,33 @@ uv run python main.py --insecure --video-only
 
 # 高い信頼度閾値で検知
 uv run python main.py --insecure --confidence 0.7
+
+# ObjectCropと連携（共有メモリでフレームを公開）
+uv run python main.py --insecure --share-frame
 ```
+
+## ObjectCropとの連携
+
+`--share-frame` オプションを使用すると、処理済みフレームを共有メモリに公開します。
+これにより、ObjectCropプログラムがリアルタイムでフレームを取得してクロップできます。
+
+### 連携手順
+
+1. WebRTCMotionDetectionを `--share-frame` 付きで起動：
+
+```bash
+cd poc/WebRTCMotionDetection
+uv run python main.py --insecure --share-frame
+```
+
+2. 別ターミナルでObjectCropを起動：
+
+```bash
+cd poc/ObjectCrop
+uv run python main.py --interval 1.0 --keep-latest
+```
+
+詳細は `../ObjectCrop/README.md` を参照してください。
 
 ## go2rtcの設定
 

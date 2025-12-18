@@ -1,1 +1,0 @@
-ObjectDetection by Ultralytics YOLOv8

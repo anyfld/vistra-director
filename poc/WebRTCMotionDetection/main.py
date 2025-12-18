@@ -9,7 +9,11 @@ import argparse
 import asyncio
 import logging
 import ssl
+import struct
 import time
+from datetime import datetime
+from multiprocessing import shared_memory
+from pathlib import Path
 from typing import Optional
 
 import aiohttp
@@ -18,9 +22,211 @@ import numpy as np
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from ultralytics import YOLO
 
+# YOLOv8のクラス名（COCO dataset）
+YOLO_CLASS_NAMES = [
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
+]
+
+# 共有メモリの設定
+SHARED_MEMORY_NAME = "webrtc_motion_frame"
+# メタデータサイズ: width(4) + height(4) + channels(4) + timestamp(8) + sequence(8) + num_detections(4) = 32バイト
+METADATA_SIZE = 32
+# 検出データ1件のサイズ: x1(4) + y1(4) + x2(4) + y2(4) + class_id(4) + confidence(4) = 24バイト
+DETECTION_SIZE = 24
+# 最大検出数
+MAX_DETECTIONS = 100
+# 検出データの最大サイズ
+MAX_DETECTION_DATA_SIZE = DETECTION_SIZE * MAX_DETECTIONS
+# 最大フレームサイズ（1920x1080x3 = 約6.2MB）
+MAX_FRAME_SIZE = 1920 * 1080 * 3
+
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class FramePublisher:
+    """共有メモリを使用してフレームと検出結果を外部プロセスに公開するクラス"""
+
+    def __init__(self, name: str = SHARED_MEMORY_NAME):
+        """
+        Args:
+            name: 共有メモリの名前
+        """
+        self.name = name
+        self.shm: Optional[shared_memory.SharedMemory] = None
+        self.sequence = 0
+        self.total_size = METADATA_SIZE + MAX_DETECTION_DATA_SIZE + MAX_FRAME_SIZE
+
+    def setup(self) -> None:
+        """共有メモリを作成または接続"""
+        try:
+            # 既存の共有メモリを削除してから作成
+            try:
+                existing_shm = shared_memory.SharedMemory(name=self.name)
+                existing_shm.close()
+                existing_shm.unlink()
+                logger.info(f"既存の共有メモリ '{self.name}' を削除しました")
+            except FileNotFoundError:
+                pass
+
+            self.shm = shared_memory.SharedMemory(
+                name=self.name, create=True, size=self.total_size
+            )
+            logger.info(
+                f"共有メモリ '{self.name}' を作成しました (サイズ: {self.total_size} bytes)"
+            )
+        except Exception as e:
+            logger.error(f"共有メモリの作成に失敗: {e}")
+            raise
+
+    def publish(
+        self,
+        frame: np.ndarray,
+        detections: Optional[list[tuple[int, int, int, int, int, float]]] = None,
+    ) -> None:
+        """
+        フレームと検出結果を共有メモリに書き込む
+
+        Args:
+            frame: BGRフォーマットのnumpy配列（元画像、アノテーションなし）
+            detections: 検出結果のリスト [(x1, y1, x2, y2, class_id, confidence), ...]
+        """
+        if self.shm is None:
+            return
+
+        height, width, channels = frame.shape
+        frame_size = height * width * channels
+
+        if frame_size > MAX_FRAME_SIZE:
+            logger.warning(
+                f"フレームサイズ ({frame_size}) が最大サイズ ({MAX_FRAME_SIZE}) を超えています"
+            )
+            return
+
+        # 検出数
+        num_detections = 0
+        if detections:
+            num_detections = min(len(detections), MAX_DETECTIONS)
+
+        # メタデータをパック
+        timestamp = time.time()
+        self.sequence += 1
+        metadata = struct.pack(
+            "<IIIdQI", width, height, channels, timestamp, self.sequence, num_detections
+        )
+
+        # 共有メモリに書き込み
+        assert self.shm.buf is not None  # 型チェッカー用
+        offset = 0
+
+        # 1. メタデータ
+        self.shm.buf[offset : offset + METADATA_SIZE] = metadata
+        offset += METADATA_SIZE
+
+        # 2. 検出データ
+        if detections and num_detections > 0:
+            for i in range(num_detections):
+                x1, y1, x2, y2, class_id, confidence = detections[i]
+                det_data = struct.pack("<IIIIIf", x1, y1, x2, y2, class_id, confidence)
+                self.shm.buf[offset : offset + DETECTION_SIZE] = det_data
+                offset += DETECTION_SIZE
+
+        # 検出データ領域の残りをスキップ
+        offset = METADATA_SIZE + MAX_DETECTION_DATA_SIZE
+
+        # 3. フレームデータ
+        self.shm.buf[offset : offset + frame_size] = frame.tobytes()
+
+    def close(self) -> None:
+        """共有メモリをクローズ"""
+        if self.shm:
+            try:
+                self.shm.close()
+                self.shm.unlink()
+                logger.info(f"共有メモリ '{self.name}' をクローズしました")
+            except Exception as e:
+                logger.warning(f"共有メモリのクローズ中にエラー: {e}")
+            self.shm = None
 
 
 class MotionDetector:
@@ -92,6 +298,10 @@ class WebRTCObjectDetector:
         imgsz: int = 640,
         half: bool = False,
         max_det: int = 300,
+        enable_frame_sharing: bool = False,
+        manual_crop_dir: str = "manual_crops",
+        manual_crop_padding: int = 10,
+        manual_crop_add_label: bool = False,
     ):
         """
         Args:
@@ -105,6 +315,10 @@ class WebRTCObjectDetector:
             imgsz: YOLO推論時の画像サイズ（小さいほど高速）
             half: 半精度演算を使用（GPU時に高速化）
             max_det: 最大検出数
+            enable_frame_sharing: 共有メモリでフレームを外部プロセスに公開するか
+            manual_crop_dir: 手動クロップの出力ディレクトリ
+            manual_crop_padding: 手動クロップ時の余白ピクセル
+            manual_crop_add_label: 手動クロップ画像にラベル（連番-オブジェクト名）を追加するか
         """
         self.go2rtc_url = go2rtc_url.rstrip("/")
         self.stream_name = stream_name
@@ -116,10 +330,15 @@ class WebRTCObjectDetector:
         self.imgsz = imgsz
         self.half = half
         self.max_det = max_det
+        self.enable_frame_sharing = enable_frame_sharing
+        self.manual_crop_dir = Path(manual_crop_dir)
+        self.manual_crop_padding = manual_crop_padding
+        self.manual_crop_add_label = manual_crop_add_label
 
         self.pc: Optional[RTCPeerConnection] = None
         self.model: Optional[YOLO] = None
         self.motion_detector: Optional[MotionDetector] = None
+        self.frame_publisher: Optional[FramePublisher] = None
 
         self.running = False
         self.frame_count = 0
@@ -129,6 +348,11 @@ class WebRTCObjectDetector:
         # 最新フレームを保持（ダブルバッファリング）
         self.latest_frame: Optional[np.ndarray] = None
         self.frame_lock = asyncio.Lock()
+
+        # 手動クロップ用：最新の元画像と検出結果を保持
+        self.latest_raw_frame: Optional[np.ndarray] = None
+        self.latest_detections: list[tuple[int, int, int, int, int, float]] = []
+        self.manual_crop_count = 0
 
         # 処理待ちフレーム（最新のみ保持して古いフレームはスキップ）
         self._pending_frame: Optional[np.ndarray] = None
@@ -164,6 +388,13 @@ class WebRTCObjectDetector:
             logger.info("動体検知を有効化")
         else:
             logger.info("動体検知は無効です")
+
+        if self.enable_frame_sharing:
+            self.frame_publisher = FramePublisher()
+            self.frame_publisher.setup()
+            logger.info("フレーム共有（共有メモリ）を有効化")
+        else:
+            logger.info("フレーム共有は無効です")
 
     async def connect_whep(self) -> None:
         """WHEPを使用してgo2rtcに接続"""
@@ -309,6 +540,7 @@ class WebRTCObjectDetector:
 
         # YOLOv8で物体検知（有効な場合）
         detection_count = 0
+        detections: list[tuple[int, int, int, int, int, float]] = []
         if self.enable_object_detection and self.model:
             inference_start = time.perf_counter()
             results = self.model(
@@ -322,6 +554,13 @@ class WebRTCObjectDetector:
             self.inference_time_ms = (time.perf_counter() - inference_start) * 1000
             annotated_frame = results[0].plot()
             detection_count = len(results[0].boxes)
+
+            # 検出結果を抽出（共有メモリ用）
+            for box in results[0].boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                class_id = int(box.cls[0].cpu().numpy())
+                confidence = float(box.conf[0].cpu().numpy())
+                detections.append((x1, y1, x2, y2, class_id, confidence))
         else:
             # 物体検知が無効な場合は直接使用（コピーしない）
             annotated_frame = img
@@ -370,13 +609,104 @@ class WebRTCObjectDetector:
         # 最新フレームを更新
         async with self.frame_lock:
             self.latest_frame = annotated_frame
+            # 手動クロップ用に元画像と検出結果を保持
+            self.latest_raw_frame = img.copy()
+            self.latest_detections = detections.copy() if detections else []
+
+        # 共有メモリにフレームと検出結果を公開（元画像を使用）
+        if self.frame_publisher:
+            self.frame_publisher.publish(img, detections if detections else None)
+
+    def _manual_crop_objects(self) -> int:
+        """現在の検出オブジェクトを手動でクロップして保存"""
+        if self.latest_raw_frame is None or not self.latest_detections:
+            logger.warning("クロップするオブジェクトがありません")
+            return 0
+
+        # 出力ディレクトリを作成
+        self.manual_crop_dir.mkdir(parents=True, exist_ok=True)
+
+        frame = self.latest_raw_frame
+        height, width = frame.shape[:2]
+        timestamp = time.time()
+        dt = datetime.fromtimestamp(timestamp)
+        saved_count = 0
+
+        for i, (x1, y1, x2, y2, class_id, confidence) in enumerate(
+            self.latest_detections
+        ):
+            # クラス名を取得
+            class_name_raw = (
+                YOLO_CLASS_NAMES[class_id]
+                if 0 <= class_id < len(YOLO_CLASS_NAMES)
+                else f"class_{class_id}"
+            )
+            class_name = class_name_raw.replace(" ", "_")
+
+            # パディングを追加してクロップ
+            crop_x1 = max(0, x1 - self.manual_crop_padding)
+            crop_y1 = max(0, y1 - self.manual_crop_padding)
+            crop_x2 = min(width, x2 + self.manual_crop_padding)
+            crop_y2 = min(height, y2 + self.manual_crop_padding)
+
+            cropped = frame[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+
+            # ラベルを追加（オプション）
+            if self.manual_crop_add_label:
+                label_text = f"{i + 1}-{class_name_raw}"
+                crop_h, crop_w = cropped.shape[:2]
+
+                # フォントサイズを画像サイズに応じて調整
+                font_scale = max(0.4, min(crop_w, crop_h) / 200)
+                thickness = max(1, int(font_scale * 2))
+
+                # テキストサイズを取得
+                (text_w, text_h), baseline = cv2.getTextSize(
+                    label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+                )
+
+                # 背景を描画（左上）
+                padding = 4
+                cv2.rectangle(
+                    cropped,
+                    (0, 0),
+                    (text_w + padding * 2, text_h + baseline + padding * 2),
+                    (0, 0, 0),
+                    -1,
+                )
+
+                # テキストを描画
+                cv2.putText(
+                    cropped,
+                    label_text,
+                    (padding, text_h + padding),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+
+            # ファイル名を生成
+            self.manual_crop_count += 1
+            filename = f"manual_{class_name}_{dt.strftime('%Y%m%d_%H%M%S')}_{self.manual_crop_count:04d}.jpg"
+            filepath = self.manual_crop_dir / filename
+
+            # 保存
+            cv2.imwrite(str(filepath), cropped, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            saved_count += 1
+            logger.info(
+                f"[手動クロップ] {i + 1}-{class_name_raw}: {filepath.name} "
+                f"(サイズ: {crop_x2 - crop_x1}x{crop_y2 - crop_y1}, conf: {confidence:.2f})"
+            )
+
+        return saved_count
 
     async def display_loop(self) -> None:
         """OpenCVウィンドウでフレームを表示"""
         window_name = f"WebRTC Object Detection - {self.stream_name}"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-        logger.info("映像表示を開始します。'q'キーで終了します。")
+        logger.info("映像表示を開始します。'q'キーで終了、SPACEキーで手動クロップ。")
 
         # runningがTrueになるまで待機
         wait_count = 0
@@ -414,6 +744,13 @@ class WebRTCObjectDetector:
                 logger.info("終了キーが押されました")
                 self.running = False
                 break
+            elif key == ord(" "):  # スペースキー
+                logger.info("スペースキーが押されました - 手動クロップを実行")
+                count = self._manual_crop_objects()
+                if count > 0:
+                    logger.info(
+                        f"手動クロップ完了: {count}個のオブジェクトを保存しました"
+                    )
 
             # 表示ループの待機時間を最小化
             await asyncio.sleep(0.001)
@@ -438,6 +775,9 @@ class WebRTCObjectDetector:
         if self.pc:
             await self.pc.close()
             self.pc = None
+        if self.frame_publisher:
+            self.frame_publisher.close()
+            self.frame_publisher = None
         cv2.destroyAllWindows()
         logger.info("接続を閉じました")
 
@@ -513,6 +853,28 @@ def main():
         action="store_true",
         help="詳細なログを出力する",
     )
+    parser.add_argument(
+        "--share-frame",
+        action="store_true",
+        help="共有メモリでフレームを外部プロセスに公開する（ObjectCrop連携用）",
+    )
+    parser.add_argument(
+        "--manual-crop-dir",
+        type=str,
+        default="manual_crops",
+        help="手動クロップの出力ディレクトリ（デフォルト: manual_crops）",
+    )
+    parser.add_argument(
+        "--manual-crop-padding",
+        type=int,
+        default=10,
+        help="手動クロップ時の余白ピクセル（デフォルト: 10）",
+    )
+    parser.add_argument(
+        "--manual-crop-label",
+        action="store_true",
+        help="手動クロップ画像にラベル（連番-オブジェクト名）を追加する",
+    )
 
     args = parser.parse_args()
 
@@ -534,6 +896,10 @@ def main():
         imgsz=args.imgsz,
         half=args.half,
         max_det=args.max_det,
+        enable_frame_sharing=args.share_frame,
+        manual_crop_dir=args.manual_crop_dir,
+        manual_crop_padding=args.manual_crop_padding,
+        manual_crop_add_label=args.manual_crop_label,
     )
 
     try:
