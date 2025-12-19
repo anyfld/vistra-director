@@ -9,6 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from threading import Thread
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -42,6 +43,51 @@ _device_status: "ptz_service_pb2.DeviceStatus.ValueType" = (
 _interrupt_requested: bool = False
 
 PTZ_POLL_INTERVAL_SEC = 0.5
+
+
+@dataclass
+class PTZCorrection:
+    """PTZ補正設定"""
+
+    swap_pan_tilt: bool = False
+    invert_pan: bool = False
+    invert_tilt: bool = False
+
+
+_ptz_correction: PTZCorrection = PTZCorrection()
+
+
+def apply_ptz_correction(pan: float, tilt: float) -> tuple[float, float]:
+    """PTZ補正を適用してパンとチルトの値を変換する"""
+    corrected_pan = pan
+    corrected_tilt = tilt
+
+    if _ptz_correction.invert_pan:
+        corrected_pan = -corrected_pan
+    if _ptz_correction.invert_tilt:
+        corrected_tilt = -corrected_tilt
+    if _ptz_correction.swap_pan_tilt:
+        corrected_pan, corrected_tilt = corrected_tilt, corrected_pan
+
+    return corrected_pan, corrected_tilt
+
+
+def set_ptz_correction(
+    swap_pan_tilt: bool = False,
+    invert_pan: bool = False,
+    invert_tilt: bool = False,
+) -> None:
+    """PTZ補正設定を更新する"""
+    global _ptz_correction
+    _ptz_correction = PTZCorrection(
+        swap_pan_tilt=swap_pan_tilt,
+        invert_pan=invert_pan,
+        invert_tilt=invert_tilt,
+    )
+    logger.info(
+        f"PTZ補正設定を更新: swap_pan_tilt={swap_pan_tilt}, "
+        f"invert_pan={invert_pan}, invert_tilt={invert_tilt}"
+    )
 
 
 class PTZGUIHandler(BaseHTTPRequestHandler):
@@ -449,12 +495,21 @@ async def handle_ptz_stream(
     verbose: bool,
     virtual_ptz: bool = False,
     gui_port: int | None = None,
+    swap_pan_tilt: bool = False,
+    invert_pan: bool = False,
+    invert_tilt: bool = False,
 ) -> None:
     """PTZストリーム処理のエントリポイント"""
     http_client: httpx.AsyncClient | None = None
     ptz_client: ptz_service_connect.PTZServiceClient | None = None
 
     try:
+        set_ptz_correction(
+            swap_pan_tilt=swap_pan_tilt,
+            invert_pan=invert_pan,
+            invert_tilt=invert_tilt,
+        )
+
         verify = not insecure
         http_client = httpx.AsyncClient(verify=verify)
         ptz_client = ptz_service_connect.PTZServiceClient(
@@ -551,12 +606,19 @@ async def _execute_absolute_move(
     )
 
     ptz = cinematography_pb2.PTZParameters()
-    ptz.pan = pos.x * 180.0
-    ptz.tilt = pos.y * 90.0
+    pan = pos.x * 180.0
+    tilt = pos.y * 90.0
+    corrected_pan, corrected_tilt = apply_ptz_correction(pan, tilt)
+    ptz.pan = corrected_pan
+    ptz.tilt = corrected_tilt
     ptz.zoom = pos.z
     if speed:
-        ptz.pan_speed = speed.pan_speed
-        ptz.tilt_speed = speed.tilt_speed
+        pan_speed = speed.pan_speed
+        tilt_speed = speed.tilt_speed
+        if _ptz_correction.swap_pan_tilt:
+            pan_speed, tilt_speed = tilt_speed, pan_speed
+        ptz.pan_speed = pan_speed
+        ptz.tilt_speed = tilt_speed
         ptz.zoom_speed = speed.zoom_speed
 
     if virtual_ptz:
@@ -597,13 +659,26 @@ async def _execute_relative_move(
     if _last_ptz:
         ptz.CopyFrom(_last_ptz)
 
-    ptz.pan += trans.pan_delta
-    ptz.tilt += trans.tilt_delta
+    pan_delta = trans.pan_delta
+    tilt_delta = trans.tilt_delta
+    if _ptz_correction.swap_pan_tilt:
+        pan_delta, tilt_delta = tilt_delta, pan_delta
+    if _ptz_correction.invert_pan:
+        pan_delta = -pan_delta
+    if _ptz_correction.invert_tilt:
+        tilt_delta = -tilt_delta
+
+    ptz.pan += pan_delta
+    ptz.tilt += tilt_delta
     ptz.zoom += trans.zoom_delta
 
     if speed:
-        ptz.pan_speed = speed.pan_speed
-        ptz.tilt_speed = speed.tilt_speed
+        pan_speed = speed.pan_speed
+        tilt_speed = speed.tilt_speed
+        if _ptz_correction.swap_pan_tilt:
+            pan_speed, tilt_speed = tilt_speed, pan_speed
+        ptz.pan_speed = pan_speed
+        ptz.tilt_speed = tilt_speed
         ptz.zoom_speed = speed.zoom_speed
 
     if virtual_ptz:
@@ -645,8 +720,17 @@ async def _execute_continuous_move(
     if _last_ptz:
         ptz.CopyFrom(_last_ptz)
 
-    ptz.pan_speed = abs(vel.pan_velocity)
-    ptz.tilt_speed = abs(vel.tilt_velocity)
+    pan_velocity = vel.pan_velocity
+    tilt_velocity = vel.tilt_velocity
+    if _ptz_correction.swap_pan_tilt:
+        pan_velocity, tilt_velocity = tilt_velocity, pan_velocity
+    if _ptz_correction.invert_pan:
+        pan_velocity = -pan_velocity
+    if _ptz_correction.invert_tilt:
+        tilt_velocity = -tilt_velocity
+
+    ptz.pan_speed = abs(pan_velocity)
+    ptz.tilt_speed = abs(tilt_velocity)
     ptz.zoom_speed = abs(vel.zoom_velocity)
 
     start_time = time.time()
@@ -658,8 +742,8 @@ async def _execute_continuous_move(
             _interrupt_requested = False
             break
 
-        ptz.pan += vel.pan_velocity * step_interval * 10
-        ptz.tilt += vel.tilt_velocity * step_interval * 10
+        ptz.pan += pan_velocity * step_interval * 10
+        ptz.tilt += tilt_velocity * step_interval * 10
         ptz.zoom += vel.zoom_velocity * step_interval
 
         ptz.pan = max(-180.0, min(180.0, ptz.pan))

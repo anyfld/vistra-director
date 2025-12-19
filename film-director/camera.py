@@ -149,6 +149,9 @@ async def register_camera(args: argparse.Namespace) -> None:
             gui_port = getattr(args, "virtual_ptz_gui_port", None)
             if virtual_ptz and gui_port == 0:
                 gui_port = None
+            swap_pan_tilt = getattr(args, "ptz_swap_pan_tilt", False)
+            invert_pan = getattr(args, "ptz_invert_pan", False)
+            invert_tilt = getattr(args, "ptz_invert_tilt", False)
             await handle_ptz_stream(
                 args.ptz_service_url,
                 camera_id,
@@ -156,6 +159,9 @@ async def register_camera(args: argparse.Namespace) -> None:
                 args.verbose,
                 virtual_ptz,
                 gui_port,
+                swap_pan_tilt,
+                invert_pan,
+                invert_tilt,
             )
         elif args.supports_ptz and not args.ptz_service_url:
             logger.warning(

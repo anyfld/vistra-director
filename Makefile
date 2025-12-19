@@ -21,6 +21,9 @@ register-camera:
 		$(if $(VIRTUAL_PTZ),--virtual-ptz,) \
 		$(if $(VIRTUAL_PTZ_GUI_PORT),--virtual-ptz-gui-port $(VIRTUAL_PTZ_GUI_PORT),) \
 		$(if $(PTZ_SERVICE_URL),--ptz-service-url $(PTZ_SERVICE_URL),) \
+		$(if $(PTZ_SWAP_PAN_TILT),--ptz-swap-pan-tilt,) \
+		$(if $(PTZ_INVERT_PAN),--ptz-invert-pan,) \
+		$(if $(PTZ_INVERT_TILT),--ptz-invert-tilt,) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
 		$(if $(VERBOSE),--verbose,) \

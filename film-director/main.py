@@ -151,6 +151,21 @@ def parse_args() -> argparse.Namespace:
         default="camera",
         help="WebRTC接続名 (default: camera)",
     )
+    parser.add_argument(
+        "--ptz-swap-pan-tilt",
+        action="store_true",
+        help="PTZ補正: パンとチルトを入れ替える",
+    )
+    parser.add_argument(
+        "--ptz-invert-pan",
+        action="store_true",
+        help="PTZ補正: パンを反転する",
+    )
+    parser.add_argument(
+        "--ptz-invert-tilt",
+        action="store_true",
+        help="PTZ補正: チルトを反転する",
+    )
     return parser.parse_args()
 
 
