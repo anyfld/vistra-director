@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from camera import register_camera
-from ptz import execute_ptz_command, handle_ptz_stream
 
 logger = logging.getLogger(__name__)
 
