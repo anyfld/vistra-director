@@ -9,5 +9,7 @@ from . import fd_service_connect
 from . import fd_service_pb2
 from . import md_service_connect
 from . import md_service_pb2
+from . import ptz_service_connect
+from . import ptz_service_pb2
 from . import service_connect
 from . import service_pb2
