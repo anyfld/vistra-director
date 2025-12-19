@@ -76,6 +76,7 @@ def build_register_request(args: argparse.Namespace) -> cd_service_pb2.RegisterC
     request.master_mf_id = args.master_mf_id
     request.connection.CopyFrom(connection)
     request.capabilities.CopyFrom(capabilities)
+    request.webrtc_connection_name = getattr(args, "webrtc_connection_name", "camera")
 
     metadata = parse_metadata(args.metadata)
     for key, value in metadata.items():

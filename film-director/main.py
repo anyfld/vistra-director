@@ -146,6 +146,12 @@ def parse_args() -> argparse.Namespace:
         default=8888,
         help="仮想PTZ GUIサーバーのポート番号（default: 8888, 0で無効化）",
     )
+    parser.add_argument(
+        "--webrtc-connection-name",
+        type=str,
+        default="camera",
+        help="WebRTC接続名 (default: camera)",
+    )
     return parser.parse_args()
 
 

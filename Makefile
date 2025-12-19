@@ -23,7 +23,8 @@ register-camera:
 		$(if $(PTZ_SERVICE_URL),--ptz-service-url $(PTZ_SERVICE_URL),) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
-		$(if $(VERBOSE),--verbose,)
+		$(if $(VERBOSE),--verbose,) \
+		--webrtc-connection-name "$(if $(WEBRTC_CONNECTION_NAME),$(WEBRTC_CONNECTION_NAME),camera)"
 
 test:
 	cd film-director && uv run --extra test pytest -v
