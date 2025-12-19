@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import asyncio
 import logging
 import sys
 import time
@@ -147,12 +149,10 @@ async def handle_ptz_stream(
 
             except ConnectError as e:
                 logger.error("PTZ制御ポーリング接続エラー: %s", e, exc_info=verbose)
-                time.sleep(2)
             except Exception as e:
                 logger.error("PTZ制御ポーリング処理エラー: %s", e, exc_info=verbose)
-                time.sleep(2)
 
-            time.sleep(1)
+            await asyncio.sleep(1)
 
     except Exception as e:
         logger.error("PTZ制御ポーリング全体エラー: %s", e, exc_info=verbose)
