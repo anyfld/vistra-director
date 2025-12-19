@@ -140,6 +140,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="仮想PTZモードを使用（ハードウェア制御を行わず、ログ出力のみ）",
     )
+    parser.add_argument(
+        "--virtual-ptz-gui-port",
+        type=int,
+        default=8888,
+        help="仮想PTZ GUIサーバーのポート番号（default: 8888, 0で無効化）",
+    )
     return parser.parse_args()
 
 

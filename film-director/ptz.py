@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import asyncio
+import json
 import logging
 import sys
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from socketserver import ThreadingMixIn
+from threading import Thread
+from typing import Any, ClassVar
 
 import httpx
 from connectrpc.errors import ConnectError
@@ -27,9 +31,298 @@ logger = logging.getLogger(__name__)
 
 _servo_controller: "ServoController | None" = None
 _last_ptz: "fd_service_pb2.PTZParameters | None" = None
+_gui_server: "HTTPServer | None" = None
 
 PTZ_POLL_INTERVAL_SEC = 1.0
 STATE_REPORT_INTERVAL_SEC = 5.0
+
+
+class PTZGUIHandler(BaseHTTPRequestHandler):
+    """PTZ状態を表示するGUI用HTTPハンドラー"""
+
+    def end_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        super().end_headers()
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(200)
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        if self.path == "/api/ptz/status":
+            self._handle_status()
+        elif self.path == "/" or self.path == "/index.html":
+            self._handle_index()
+        else:
+            self.send_error(404, "Not Found")
+
+    def _handle_status(self) -> None:
+        """PTZ状態をJSONで返す"""
+        global _last_ptz
+        status = {
+            "pan": _last_ptz.pan if _last_ptz else 0.0,
+            "tilt": _last_ptz.tilt if _last_ptz else 0.0,
+            "zoom": _last_ptz.zoom if _last_ptz else 0.0,
+            "pan_speed": _last_ptz.pan_speed if _last_ptz else 0.0,
+            "tilt_speed": _last_ptz.tilt_speed if _last_ptz else 0.0,
+            "zoom_speed": _last_ptz.zoom_speed if _last_ptz else 0.0,
+            "has_ptz": _last_ptz is not None,
+        }
+        response = json.dumps(status).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+    def _handle_index(self) -> None:
+        """PTZ状態表示用HTMLページを返す"""
+        html = """<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仮想PTZ状態表示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2em;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .status-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        .status-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        .status-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .visualization {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 30px;
+            text-align: center;
+        }
+        .camera-view {
+            position: relative;
+            width: 300px;
+            height: 200px;
+            margin: 20px auto;
+            background: #e9ecef;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .camera-indicator {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #667eea;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+        .zoom-indicator {
+            margin-top: 20px;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        .zoom-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            border-radius: 15px;
+        }
+        .zoom-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: bold;
+            color: #333;
+        }
+        .no-data {
+            color: #6c757d;
+            font-style: italic;
+            text-align: center;
+            padding: 40px;
+        }
+        .last-update {
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 仮想PTZ状態表示</h1>
+        <div id="status-container">
+            <div class="no-data">PTZデータを待機中...</div>
+        </div>
+        <div class="last-update" id="last-update"></div>
+    </div>
+    <script>
+        function updateStatus() {
+            fetch('/api/ptz/status')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('status-container');
+                    const lastUpdate = document.getElementById('last-update');
+                    
+                    if (!data.has_ptz) {
+                        container.innerHTML = '<div class="no-data">PTZデータがまだ受信されていません</div>';
+                        lastUpdate.textContent = '';
+                        return;
+                    }
+                    
+                    const pan = data.pan.toFixed(2);
+                    const tilt = data.tilt.toFixed(2);
+                    const zoom = data.zoom.toFixed(2);
+                    
+                    // カメラの位置を計算（pan: -180~180 → 0~300, tilt: -90~90 → 0~200）
+                    const panPos = ((data.pan + 180) / 360) * 300;
+                    const tiltPos = ((data.tilt + 90) / 180) * 200;
+                    
+                    // ズームの割合（0~100として表示）
+                    const zoomPercent = Math.max(0, Math.min(100, (data.zoom + 1) * 50));
+                    
+                    container.innerHTML = `
+                        <div class="status-grid">
+                            <div class="status-card">
+                                <div class="status-label">Pan (水平)</div>
+                                <div class="status-value">${pan}°</div>
+                            </div>
+                            <div class="status-card">
+                                <div class="status-label">Tilt (垂直)</div>
+                                <div class="status-value">${tilt}°</div>
+                            </div>
+                            <div class="status-card">
+                                <div class="status-label">Zoom</div>
+                                <div class="status-value">${zoom}</div>
+                            </div>
+                        </div>
+                        <div class="visualization">
+                            <h3 style="margin-bottom: 20px; color: #333;">カメラ視野</h3>
+                            <div class="camera-view">
+                                <div class="camera-indicator" style="left: ${panPos}px; top: ${tiltPos}px;"></div>
+                            </div>
+                            <div style="margin-top: 20px;">
+                                <div style="margin-bottom: 10px; color: #333; font-weight: 500;">ズームレベル</div>
+                                <div class="zoom-indicator">
+                                    <div class="zoom-fill" style="width: ${zoomPercent}%;"></div>
+                                    <div class="zoom-text">${zoomPercent.toFixed(1)}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    lastUpdate.textContent = '最終更新: ' + new Date().toLocaleTimeString('ja-JP');
+                })
+                .catch(error => {
+                    console.error('Error fetching PTZ status:', error);
+                });
+        }
+        
+        // 初回読み込み時と定期的に更新
+        updateStatus();
+        setInterval(updateStatus, 500);
+    </script>
+</body>
+</html>"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(html.encode("utf-8"))))
+        self.end_headers()
+        self.wfile.write(html.encode("utf-8"))
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    """マルチスレッド対応HTTPサーバー"""
+    pass
+
+
+def start_gui_server(port: int = 8888) -> None:
+    """PTZ状態表示用GUIサーバーを起動"""
+    global _gui_server
+    if _gui_server is not None:
+        logger.warning("GUIサーバーは既に起動しています")
+        return
+
+    def run_server() -> None:
+        global _gui_server
+        try:
+            _gui_server = ThreadingHTTPServer(("127.0.0.1", port), PTZGUIHandler)
+            logger.info(f"仮想PTZ GUIサーバーを起動しました: http://localhost:{port}")
+            _gui_server.serve_forever()
+        except Exception as e:
+            logger.error(f"GUIサーバー起動エラー: {e}")
+
+    thread = Thread(target=run_server, daemon=True)
+    thread.start()
+
+
+def stop_gui_server() -> None:
+    """PTZ状態表示用GUIサーバーを停止"""
+    global _gui_server
+    if _gui_server is not None:
+        _gui_server.shutdown()
+        _gui_server = None
+        logger.info("GUIサーバーを停止しました")
 
 
 def get_servo_controller() -> "ServoController | None":
@@ -209,6 +502,7 @@ async def handle_ptz_stream(
     insecure: bool,
     verbose: bool,
     virtual_ptz: bool = False,
+    gui_port: int | None = None,
 ) -> None:
     http_client: httpx.AsyncClient | None = None
     fd_client: fd_service_connect.FDServiceClient | None = None
@@ -223,6 +517,11 @@ async def handle_ptz_stream(
             raise RuntimeError("FDServiceClient is not initialized")
         mode_str = "仮想PTZモード" if virtual_ptz else "実機PTZモード"
         logger.info("PTZ制御ストリーム処理を開始します: camera_id=%s, mode=%s", camera_id, mode_str)
+        
+        if virtual_ptz and gui_port is not None:
+            start_gui_server(gui_port)
+            logger.info(f"仮想PTZ GUIをブラウザで開いてください: http://localhost:{gui_port}")
+        
         await asyncio.gather(
             _poll_ptz_commands(fd_client, camera_id, verbose, virtual_ptz),
             _send_camera_state_loop(fd_client, camera_id, verbose),
@@ -232,6 +531,7 @@ async def handle_ptz_stream(
     finally:
         if http_client:
             await http_client.aclose()
+        stop_gui_server()
         logger.info("PTZ制御ストリーム処理を終了します")
 
 

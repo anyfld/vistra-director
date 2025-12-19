@@ -144,12 +144,17 @@ async def register_camera(args: argparse.Namespace) -> None:
 
         if args.supports_ptz and args.fd_service_url:
             logger.info("PTZ制御ストリーム処理を開始します")
+            virtual_ptz = getattr(args, "virtual_ptz", False)
+            gui_port = getattr(args, "virtual_ptz_gui_port", None)
+            if virtual_ptz and gui_port == 0:
+                gui_port = None
             await handle_ptz_stream(
                 args.fd_service_url,
                 camera_id,
                 args.insecure,
                 args.verbose,
-                getattr(args, "virtual_ptz", False),
+                virtual_ptz,
+                gui_port,
             )
         elif args.supports_ptz and not args.fd_service_url:
             logger.warning(
