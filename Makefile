@@ -20,4 +20,5 @@ register-camera:
 		$(if $(SUPPORTS_PTZ),--supports-ptz,) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
-		$(if $(VERBOSE),--verbose,)
+		$(if $(VERBOSE),--verbose,) \
+		$(if $(NO_HEARTBEAT),--no-heartbeat,)
