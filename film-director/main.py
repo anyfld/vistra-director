@@ -12,12 +12,16 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-# gen/protoディレクトリをパスに追加（生成されたコードがv1.xxx形式でインポートするため）
 project_root = Path(__file__).parent.parent
 gen_proto_path = project_root / "gen" / "proto"
+sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(gen_proto_path))
 
-# 生成されたコードはv1.xxx形式でインポートするため、gen/protoをパスに追加した後は直接v1からインポート
+try:
+    from poc.cd.servo_controller import ServoController
+except Exception:  # pragma: no cover - 環境依存のためテストではスキップ
+    ServoController = None  # type: ignore[assignment]
+
 import v1.cd_service_connect as cd_service_connect
 import v1.cd_service_pb2 as cd_service_pb2
 import v1.cinematography_pb2 as cinematography_pb2
@@ -28,6 +32,25 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
 logger = logging.getLogger(__name__)
+
+_servo_controller: "ServoController | None"
+_servo_controller = None
+
+
+def get_servo_controller() -> "ServoController | None":
+    global _servo_controller
+    if ServoController is None:
+        return None
+    if _servo_controller is not None:
+        return _servo_controller
+    try:
+        controller = ServoController()
+        controller.connect()
+    except Exception as e:
+        logger.error(f"PTZハードウェア制御の初期化に失敗しました: {e}")
+        return None
+    _servo_controller = controller
+    return _servo_controller
 
 
 def get_default_address() -> str:
@@ -428,8 +451,6 @@ async def execute_ptz_command(
     result.success = True
 
     try:
-        # TODO: 実際のカメラ制御APIを呼び出す
-        # 現在はログ出力のみ
         command_type_name = fd_service_pb2.ControlCommandType.Name(command.type)
         logger.info(f"PTZコマンド実行: type={command_type_name}")
 
@@ -438,7 +459,19 @@ async def execute_ptz_command(
             logger.info(
                 f"PTZパラメータ適用: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
             )
-            # 実際のPTZパラメータを設定
+
+            controller = get_servo_controller()
+            if controller is not None:
+                try:
+                    pan_angle = max(0, min(180, int(ptz.pan)))
+                    tilt_angle = max(0, min(180, int(ptz.tilt)))
+                    controller.move_both(pan_angle, tilt_angle)
+                    logger.info(
+                        f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}"
+                    )
+                except Exception as e:
+                    logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
+
             result.resulting_ptz.CopyFrom(ptz)
 
         result.execution_time_ms = 100  # 仮の実行時間
