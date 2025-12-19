@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import asyncio
 import logging
 import sys
 import time
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -25,10 +23,8 @@ import v1.fd_service_pb2 as fd_service_pb2
 
 logger = logging.getLogger(__name__)
 
-_servo_controller: "ServoController | None"
-_servo_controller = None
-
-_last_ptz = None
+_servo_controller: "ServoController | None" = None
+_last_ptz: "fd_service_pb2.PTZParameters | None" = None
 
 
 def get_servo_controller() -> "ServoController | None":
@@ -41,7 +37,7 @@ def get_servo_controller() -> "ServoController | None":
         controller = ServoController()
         controller.connect()
     except Exception as e:
-        logger.error(f"PTZハードウェア制御の初期化に失敗しました: {e}")
+        logger.error("PTZハードウェア制御の初期化に失敗しました: %s", e)
         return None
     _servo_controller = controller
     return _servo_controller
@@ -55,6 +51,8 @@ async def handle_ptz_stream(
 ) -> None:
     http_client: httpx.AsyncClient | None = None
     fd_client: fd_service_connect.FDServiceClient | None = None
+    last_result: fd_service_pb2.ControlCommandResult | None = None
+    initialized = False
 
     try:
         verify = not insecure
@@ -64,107 +62,104 @@ async def handle_ptz_stream(
             session=http_client,
         )
 
-        logger.info(f"PTZ制御ストリームに接続: camera_id={camera_id}")
+        logger.info("PTZ制御ポーリングを開始します: camera_id=%s", camera_id)
 
-        request_queue: asyncio.Queue[
-            fd_service_pb2.StreamControlCommandsRequest | None
-        ] = asyncio.Queue()
-
-        async def request_iterator() -> AsyncIterator[fd_service_pb2.StreamControlCommandsRequest]:
-            init_request = fd_service_pb2.StreamControlCommandsRequest()
-            init_request.init.camera_id = camera_id
-            yield init_request
-
-            while True:
-                request = await request_queue.get()
-                if request is None:
-                    break
-                yield request
-
-        async def heartbeat_task():
-            """5秒ごとにStreamControlCommands経由でstate信号を送信するハートビートタスク"""
+        while True:
             try:
-                while True:
-                    await asyncio.sleep(5)
-                    try:
-                        state_request = fd_service_pb2.StreamControlCommandsRequest()
-                        state = state_request.state
-                        state.camera_id = camera_id
-                        state.updated_at_ms = int(time.time() * 1000)
-                        if _last_ptz is not None:
-                            state.current_ptz.CopyFrom(_last_ptz)
-                        await request_queue.put(state_request)
-                        if verbose:
-                            logger.debug("ハートビート送信: camera_id=%s", camera_id)
-                    except Exception as e:
-                        logger.error("ハートビート送信エラー: %s", e, exc_info=verbose)
-            except asyncio.CancelledError:
-                logger.debug("ハートビートタスクがキャンセルされました")
+                request = fd_service_pb2.StreamControlCommandsRequest()
+
+                if not initialized:
+                    init = request.init
+                    init.camera_id = camera_id
+                    initialized = True
+                    if verbose:
+                        logger.debug("PTZ制御初期化リクエスト送信: camera_id=%s", camera_id)
+                elif last_result is not None:
+                    request.result.CopyFrom(last_result)
+                    if verbose:
+                        logger.debug(
+                            "PTZ制御結果を送信: command_id=%s, success=%s",
+                            last_result.command_id,
+                            last_result.success,
+                        )
+                    last_result = None
+                else:
+                    state = request.state
+                    state.camera_id = camera_id
+                    state.updated_at_ms = int(time.time() * 1000)
+                    state.is_moving = False
+                    state.has_error = False
+                    if _last_ptz is not None:
+                        state.current_ptz.CopyFrom(_last_ptz)
+                    if verbose:
+                        logger.debug("PTZ制御状態を送信: camera_id=%s", camera_id)
+
+                if fd_client is None:
+                    raise RuntimeError("FDServiceClient is not initialized")
+
+                response = await fd_client.stream_control_commands(request)
+
+                if response.HasField("command"):
+                    command = response.command
+                    logger.info(
+                        "PTZ制御コマンドを受信: command_id=%s, type=%s, camera_id=%s",
+                        command.command_id,
+                        command.type,
+                        command.camera_id,
+                    )
+
+                    if command.HasField("ptz_parameters"):
+                        ptz = command.ptz_parameters
+                        logger.info(
+                            "PTZパラメータ: pan=%s, tilt=%s, zoom=%s, "
+                            "pan_speed=%s, tilt_speed=%s, zoom_speed=%s",
+                            ptz.pan,
+                            ptz.tilt,
+                            ptz.zoom,
+                            ptz.pan_speed,
+                            ptz.tilt_speed,
+                            ptz.zoom_speed,
+                        )
+
+                    last_result = await execute_ptz_command(command, verbose)
+
+                    logger.info(
+                        "PTZコマンド実行完了: command_id=%s, success=%s",
+                        last_result.command_id,
+                        last_result.success,
+                    )
+
+                elif response.HasField("status"):
+                    status = response.status
+                    logger.info(
+                        "PTZ制御ステータス: connected=%s, message=%s",
+                        status.connected,
+                        status.message,
+                    )
+
+                elif response.HasField("result") and verbose:
+                    result = response.result
+                    logger.debug(
+                        "PTZ制御結果レスポンスを受信: command_id=%s, success=%s",
+                        result.command_id,
+                        result.success,
+                    )
+
+            except ConnectError as e:
+                logger.error("PTZ制御ポーリング接続エラー: %s", e, exc_info=verbose)
+                time.sleep(2)
             except Exception as e:
-                logger.error("ハートビートタスクエラー: %s", e, exc_info=verbose)
+                logger.error("PTZ制御ポーリング処理エラー: %s", e, exc_info=verbose)
+                time.sleep(2)
 
-        async def process_responses():
-            try:
-                async for response in fd_client.stream_control_commands(request_iterator()):
-                    try:
-                        if response.HasField("command"):
-                            command = response.command
-                            logger.info(
-                                f"PTZ制御コマンドを受信: command_id={command.command_id}, "
-                                f"type={command.type}, camera_id={command.camera_id}"
-                            )
+            time.sleep(1)
 
-                            if command.HasField("ptz_parameters"):
-                                ptz = command.ptz_parameters
-                                logger.info(
-                                    f"PTZパラメータ: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}, "
-                                    f"pan_speed={ptz.pan_speed}, tilt_speed={ptz.tilt_speed}, "
-                                    f"zoom_speed={ptz.zoom_speed}"
-                                )
-
-                            result = await execute_ptz_command(command, verbose)
-
-                            result_request = fd_service_pb2.StreamControlCommandsRequest()
-                            result_request.result.CopyFrom(result)
-                            await request_queue.put(result_request)
-
-                            logger.info(
-                                f"PTZコマンド実行完了: command_id={command.command_id}, "
-                                f"success={result.success}"
-                            )
-
-                        elif response.HasField("status"):
-                            status = response.status
-                            logger.info(
-                                f"ストリームステータス: connected={status.connected}, "
-                                f"message={status.message}"
-                            )
-
-                    except Exception as e:
-                        logger.error(f"PTZストリーム処理エラー: {e}", exc_info=verbose)
-            except Exception as e:
-                logger.error(f"PTZストリーム受信エラー: {e}", exc_info=verbose)
-            finally:
-                await request_queue.put(None)
-
-        heartbeat = asyncio.create_task(heartbeat_task())
-        try:
-            await process_responses()
-        finally:
-            heartbeat.cancel()
-            try:
-                await heartbeat
-            except asyncio.CancelledError:
-                pass
-
-    except ConnectError as e:
-        logger.error(f"PTZストリーム接続エラー: {e}", exc_info=verbose)
     except Exception as e:
-        logger.error(f"PTZストリーム処理エラー: {e}", exc_info=verbose)
+        logger.error("PTZ制御ポーリング全体エラー: %s", e, exc_info=verbose)
     finally:
         if http_client:
             await http_client.aclose()
-        logger.info("PTZ制御ストリーム処理を終了します")
+        logger.info("PTZ制御ポーリング処理を終了します")
 
 
 async def execute_ptz_command(
