@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 _servo_controller: "ServoController | None"
 _servo_controller = None
+
+_last_ptz = None
 
 
 def get_servo_controller() -> "ServoController | None":
@@ -79,26 +82,26 @@ async def handle_ptz_stream(
                 yield request
 
         async def heartbeat_task():
-            """5秒ごとにstate信号を送信するハートビートタスク"""
+            """5秒ごとにStreamControlCommands経由でstate信号を送信するハートビートタスク"""
             try:
                 while True:
                     await asyncio.sleep(5)
                     try:
                         state_request = fd_service_pb2.StreamControlCommandsRequest()
-                        camera_state = fd_service_pb2.CameraState()
-                        camera_state.camera_id = camera_id
-                        state_request.state.CopyFrom(camera_state)
+                        state = state_request.state
+                        state.camera_id = camera_id
+                        state.updated_at_ms = int(time.time() * 1000)
+                        if _last_ptz is not None:
+                            state.current_ptz.CopyFrom(_last_ptz)
                         await request_queue.put(state_request)
                         if verbose:
-                            logger.debug(f"ハートビート送信: camera_id={camera_id}")
-                    except AttributeError:
-                        logger.warning("StreamControlCommandsRequestにstateフィールドが存在しません。ハートビートをスキップします。")
+                            logger.debug("ハートビート送信: camera_id=%s", camera_id)
                     except Exception as e:
-                        logger.error(f"ハートビート送信エラー: {e}", exc_info=verbose)
+                        logger.error("ハートビート送信エラー: %s", e, exc_info=verbose)
             except asyncio.CancelledError:
                 logger.debug("ハートビートタスクがキャンセルされました")
             except Exception as e:
-                logger.error(f"ハートビートタスクエラー: {e}", exc_info=verbose)
+                logger.error("ハートビートタスクエラー: %s", e, exc_info=verbose)
 
         async def process_responses():
             try:
@@ -177,6 +180,7 @@ async def execute_ptz_command(
         logger.info(f"PTZコマンド実行: type={command_type_name}")
 
         if command.HasField("ptz_parameters"):
+            global _last_ptz
             ptz = command.ptz_parameters
             logger.info(
                 f"PTZパラメータ適用: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
@@ -195,6 +199,7 @@ async def execute_ptz_command(
                     logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
 
             result.resulting_ptz.CopyFrom(ptz)
+            _last_ptz = ptz
 
         result.execution_time_ms = 100
 
