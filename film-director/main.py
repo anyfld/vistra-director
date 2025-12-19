@@ -10,9 +10,15 @@ from pathlib import Path
 
 import httpx
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# gen/protoディレクトリをパスに追加（生成されたコードがv1.xxx形式でインポートするため）
+project_root = Path(__file__).parent.parent
+gen_proto_path = project_root / "gen" / "proto"
+sys.path.insert(0, str(gen_proto_path))
 
-from gen.proto.v1 import cd_service_connect, cd_service_pb2, cr_service_pb2
+# 生成されたコードはv1.xxx形式でインポートするため、gen/protoをパスに追加した後は直接v1からインポート
+import v1.cd_service_connect as cd_service_connect
+import v1.cd_service_pb2 as cd_service_pb2
+import v1.cr_service_pb2 as cr_service_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -189,8 +195,8 @@ async def register_camera(args: argparse.Namespace) -> None:
         verify = not args.insecure
         async with httpx.AsyncClient(verify=verify) as http_client:
             client = cd_service_connect.CameraServiceClient(
-                base_url=args.url,
-                http_client=http_client,
+                args.url,
+                session=http_client,
             )
 
             logger.info(f"カメラ登録を開始: {args.name}")

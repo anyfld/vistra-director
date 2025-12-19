@@ -57,12 +57,14 @@ source = { virtual = "." }
 dependencies = [
     { name = "connect-python" },
     { name = "httpx" },
+    { name = "protobuf" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "connect-python", extras = ["protobuf"], specifier = ">=0.6.0" },
+    { name = "connect-python", specifier = ">=0.6.0" },
     { name = "httpx", specifier = ">=0.25.0" },
+    { name = "protobuf", specifier = ">=6.0.0" },
 ]
 
 [[package]]
