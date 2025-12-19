@@ -130,10 +130,10 @@ def parse_args() -> argparse.Namespace:
         help="詳細ログを出力",
     )
     parser.add_argument(
-        "--fd-service-url",
+        "--ptz-service-url",
         type=str,
         default="http://localhost:8080",
-        help="FDServiceのURL（PTZ制御ストリームを使用する場合, default: http://localhost:8080）",
+        help="PTZServiceのURL（PTZ制御に使用, default: http://localhost:8080）",
     )
     parser.add_argument(
         "--virtual-ptz",

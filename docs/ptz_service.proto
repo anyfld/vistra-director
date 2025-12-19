@@ -1,0 +1,287 @@
+syntax = "proto3";
+
+package v1;
+
+import "v1/cinematography.proto";
+import "v1/cr_service.proto";
+
+option go_package = "github.com/anyfld/vistra-operation-control-room/gen/proto/v1;protov1";
+
+// PTZService は CEP-PTZ プロトコルに基づくPTZ制御サービスを提供します。
+// CR (Control Room) がサーバーとして動作し、FD (Film Director) および EP (Executive Producer) からの
+// リクエストを処理します。
+service PTZService {
+  // FD → CR: ポーリング・完了通知の統合エンドポイント
+  // FDは定期的（デフォルト500ms間隔）にこのエンドポイントを呼び出し、
+  // タスク完了時は即座に呼び出します。
+  rpc Polling(PollingRequest) returns (PollingResponse) {}
+
+  // EP → CR: PTZ枠命令送信 (Layer 1: 高優先度)
+  // PTZ命令は到着時にLayer 2（シネマティック枠）を全て破棄・中断します。
+  rpc SendPTZCommand(SendPTZCommandRequest) returns (SendPTZCommandResponse) {}
+
+  // EP → CR: シネマティック枠命令送信 (Layer 2: 低優先度)
+  // PTZ枠が空の時のみ実行されます。
+  rpc SendCinematicCommand(SendCinematicCommandRequest) returns (SendCinematicCommandResponse) {}
+
+  // CR のキュー状態を取得
+  rpc GetQueueStatus(GetQueueStatusRequest) returns (GetQueueStatusResponse) {}
+}
+
+// ============================================================
+// Enum 定義
+// ============================================================
+
+// PTZ操作タイプ (ONVIFベース)
+enum PTZOperationType {
+  PTZ_OPERATION_TYPE_UNSPECIFIED = 0;
+  // 絶対指定: 指定座標への移動。完了通知の対象。
+  PTZ_OPERATION_TYPE_ABSOLUTE_MOVE = 1;
+  // 相対指定: 現在値からの相対移動。完了通知の対象。
+  PTZ_OPERATION_TYPE_RELATIVE_MOVE = 2;
+  // 連続移動: 速度指定。ジョイスティック用。完了通知不要（最新値上書き）。
+  PTZ_OPERATION_TYPE_CONTINUOUS_MOVE = 3;
+}
+
+// コマンドレイヤー（優先度制御）
+enum CommandLayer {
+  COMMAND_LAYER_UNSPECIFIED = 0;
+  // Layer 1: PTZ枠 (高優先度) - 到着時、Layer 2を全て破棄・中断
+  COMMAND_LAYER_PTZ = 1;
+  // Layer 2: シネマティック枠 (低優先度) - PTZ枠が空の時のみ実行
+  COMMAND_LAYER_CINEMATIC = 2;
+}
+
+// タスク状態
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_EXECUTING = 2;
+  TASK_STATUS_COMPLETED = 3;
+  TASK_STATUS_INTERRUPTED = 4;
+}
+
+// FDデバイスの実行状態
+// 注: CameraStatus は接続状態（ONLINE/OFFLINE/STREAMING）を表しますが、
+// DeviceStatus は実行状態（IDLE/EXECUTING）を表します。
+enum DeviceStatus {
+  DEVICE_STATUS_UNSPECIFIED = 0;
+  // アイドル状態: タスクを実行していない
+  DEVICE_STATUS_IDLE = 1;
+  // 実行中: タスクを実行中
+  DEVICE_STATUS_EXECUTING = 2;
+  // エラー状態
+  DEVICE_STATUS_ERROR = 3;
+}
+
+// ============================================================
+// PTZ命令関連メッセージ
+// ============================================================
+
+// PTZ座標 (正規化座標: -1.0 ~ 1.0)
+// 注: PTZParameters は角度ベース (pan/tilt/zoom) ですが、
+// この PTZPosition は正規化座標ベースです。
+message PTZPosition {
+  // X座標 (パン方向, -1.0 ~ 1.0)
+  float x = 1;
+  // Y座標 (チルト方向, -1.0 ~ 1.0)
+  float y = 2;
+  // Z座標 (ズーム, 0.0 ~ 1.0)
+  float z = 3;
+}
+
+// PTZ速度 (絶対移動・相対移動用)
+message PTZSpeed {
+  // パン速度 (0.0 ~ 1.0)
+  float pan_speed = 1;
+  // チルト速度 (0.0 ~ 1.0)
+  float tilt_speed = 2;
+  // ズーム速度 (0.0 ~ 1.0)
+  float zoom_speed = 3;
+}
+
+// PTZ速度ベクトル (連続移動用、ジョイスティック用)
+message PTZVelocity {
+  // パン方向速度 (-1.0 ~ 1.0, 負の値は左、正の値は右)
+  float pan_velocity = 1;
+  // チルト方向速度 (-1.0 ~ 1.0, 負の値は下、正の値は上)
+  float tilt_velocity = 2;
+  // ズーム速度 (-1.0 ~ 1.0, 負の値はズームアウト、正の値はズームイン)
+  float zoom_velocity = 3;
+}
+
+// 相対移動量
+message PTZTranslation {
+  // パン方向移動量 (度)
+  float pan_delta = 1;
+  // チルト方向移動量 (度)
+  float tilt_delta = 2;
+  // ズーム移動量 (倍率)
+  float zoom_delta = 3;
+}
+
+// AbsoluteMove 命令: 指定座標への移動
+message AbsoluteMoveCommand {
+  // 目標座標
+  PTZPosition position = 1;
+  // 移動速度
+  PTZSpeed speed = 2;
+}
+
+// RelativeMove 命令: 現在値からの相対移動
+message RelativeMoveCommand {
+  // 相対移動量
+  PTZTranslation translation = 1;
+  // 移動速度
+  PTZSpeed speed = 2;
+}
+
+// ContinuousMove 命令: 速度指定（ジョイスティック用）
+message ContinuousMoveCommand {
+  // 速度ベクトル
+  PTZVelocity velocity = 1;
+  // タイムアウト (ミリ秒)
+  uint32 timeout_ms = 2;
+}
+
+// PTZ枠命令 (Layer 1)
+message PTZCommand {
+  // 操作タイプ
+  PTZOperationType operation_type = 1;
+  // 命令データ (operation_type に応じて設定)
+  oneof command {
+    AbsoluteMoveCommand absolute_move = 2;
+    RelativeMoveCommand relative_move = 3;
+    ContinuousMoveCommand continuous_move = 4;
+  }
+}
+
+// ============================================================
+// タスク管理メッセージ
+// ============================================================
+
+// タスク情報
+message Task {
+  // タスクID
+  string task_id = 1;
+  // コマンドレイヤー
+  CommandLayer layer = 2;
+  // タスク状態
+  TaskStatus status = 3;
+  // PTZ枠命令 (layer == COMMAND_LAYER_PTZ の場合)
+  PTZCommand ptz_command = 4;
+  // シネマティック枠命令 (layer == COMMAND_LAYER_CINEMATIC の場合)
+  CinematographyInstruction cinematic_command = 5;
+  // 中断フラグ: trueの場合、現在のタスクを中断して新しい命令へ移行
+  bool interrupt = 6;
+  // タスク作成時刻 (Unix ミリ秒)
+  int64 created_at_ms = 7;
+}
+
+// ============================================================
+// ポーリング関連メッセージ
+// ============================================================
+
+// FD → CR: ポーリングリクエスト
+message PollingRequest {
+  // カメラID (FDの識別子)
+  string camera_id = 1;
+  // 現在のデバイス実行状態
+  DeviceStatus device_status = 2;
+  // 現在のカメラ接続状態
+  CameraStatus camera_status = 3;
+  // 直前に完了したタスクID (任意: 完了時に設定)
+  string completed_task_id = 4;
+  // 現在実行中のタスクID
+  string executing_task_id = 5;
+  // 現在のPTZ状態
+  PTZParameters current_ptz = 6;
+  // タイムスタンプ (Unix ミリ秒)
+  int64 timestamp_ms = 7;
+}
+
+// CR → FD: ポーリングレスポンス
+message PollingResponse {
+  // 現在の命令 (commands[0])
+  Task current_command = 1;
+  // 次の命令 (commands[1], Look-ahead/Pre-fetch)
+  Task next_command = 2;
+  // 中断フラグ: trueの場合、現在の物理動作を停止し新しい命令に切り替え
+  bool interrupt = 3;
+  // サーバータイムスタンプ (Unix ミリ秒)
+  int64 timestamp_ms = 4;
+}
+
+// ============================================================
+// EP → CR: コマンド送信メッセージ
+// ============================================================
+
+// PTZ枠命令送信リクエスト
+message SendPTZCommandRequest {
+  // 対象カメラID
+  string camera_id = 1;
+  // PTZ命令
+  PTZCommand command = 2;
+  // 発信元識別子 (EP識別用)
+  string source_id = 3;
+}
+
+// PTZ枠命令送信レスポンス
+message SendPTZCommandResponse {
+  // 受理フラグ
+  bool accepted = 1;
+  // 割り当てられたタスクID
+  string task_id = 2;
+  // エラーメッセージ (受理失敗時)
+  string error_message = 3;
+}
+
+// シネマティック枠命令送信リクエスト
+message SendCinematicCommandRequest {
+  // 対象カメラID
+  string camera_id = 1;
+  // シネマティック命令
+  CinematographyInstruction command = 2;
+  // 発信元識別子 (EP識別用)
+  string source_id = 3;
+}
+
+// シネマティック枠命令送信レスポンス
+message SendCinematicCommandResponse {
+  // 受理フラグ
+  bool accepted = 1;
+  // 割り当てられたタスクID
+  string task_id = 2;
+  // エラーメッセージ (受理失敗時)
+  string error_message = 3;
+}
+
+// ============================================================
+// キュー状態取得メッセージ
+// ============================================================
+
+// キュー状態取得リクエスト
+message GetQueueStatusRequest {
+  // 対象カメラID (空の場合は全カメラ)
+  string camera_id = 1;
+}
+
+// カメラごとのキュー状態
+message CameraQueueStatus {
+  // カメラID
+  string camera_id = 1;
+  // PTZ枠キューのタスク数
+  uint32 ptz_queue_size = 2;
+  // シネマティック枠キューのタスク数
+  uint32 cinematic_queue_size = 3;
+  // 現在実行中のタスク
+  Task executing_task = 4;
+  // 最終ポーリング時刻 (Unix ミリ秒)
+  int64 last_polling_at_ms = 5;
+}
+
+// キュー状態取得レスポンス
+message GetQueueStatusResponse {
+  // カメラごとのキュー状態
+  repeated CameraQueueStatus camera_queues = 1;
+}

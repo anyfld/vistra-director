@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from threading import Thread
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 from connectrpc.errors import ConnectError
@@ -24,17 +24,24 @@ try:
 except Exception:  # pragma: no cover
     ServoController = None  # type: ignore[assignment]
 
-import v1.fd_service_connect as fd_service_connect
-import v1.fd_service_pb2 as fd_service_pb2
+import v1.ptz_service_connect as ptz_service_connect
+import v1.ptz_service_pb2 as ptz_service_pb2
+import v1.cr_service_pb2 as cr_service_pb2
+import v1.cinematography_pb2 as cinematography_pb2
 
 logger = logging.getLogger(__name__)
 
 _servo_controller: "ServoController | None" = None
-_last_ptz: "fd_service_pb2.PTZParameters | None" = None
+_last_ptz: "cinematography_pb2.PTZParameters | None" = None
 _gui_server: "HTTPServer | None" = None
+_executing_task_id: str = ""
+_completed_task_id: str = ""
+_device_status: "ptz_service_pb2.DeviceStatus.ValueType" = (
+    ptz_service_pb2.DeviceStatus.DEVICE_STATUS_IDLE
+)
+_interrupt_requested: bool = False
 
-PTZ_POLL_INTERVAL_SEC = 1.0
-STATE_REPORT_INTERVAL_SEC = 5.0
+PTZ_POLL_INTERVAL_SEC = 0.5
 
 
 class PTZGUIHandler(BaseHTTPRequestHandler):
@@ -341,191 +348,138 @@ def get_servo_controller() -> "ServoController | None":
     return _servo_controller
 
 
-async def _send_command_result(
-    fd_client: fd_service_connect.FDServiceClient,
-    result: fd_service_pb2.ControlCommandResult,
-    verbose: bool,
-) -> None:
-    request = fd_service_pb2.StreamControlCommandsRequest()
-    request.result.CopyFrom(result)
-    if verbose:
-        logger.debug(
-            "PTZ制御結果を送信: command_id=%s, success=%s",
-            result.command_id,
-            result.success,
-        )
-    response = await fd_client.stream_control_commands(request)
-    if response.HasField("status"):
-        status = response.status
-        logger.info(
-            "PTZ制御結果送信ステータス: connected=%s, message=%s",
-            status.connected,
-            status.message,
-        )
-    if response.HasField("command") and verbose:
-        command = response.command
-        logger.debug(
-            "結果送信レスポンスでPTZコマンドを受信: command_id=%s, type=%s, camera_id=%s",
-            command.command_id,
-            command.type,
-            command.camera_id,
-        )
-    if response.HasField("result") and verbose:
-        result_response = response.result
-        logger.debug(
-            "結果送信レスポンスで結果を受信: command_id=%s, success=%s",
-            result_response.command_id,
-            result_response.success,
-        )
-
-
-async def _poll_ptz_commands(
-    fd_client: fd_service_connect.FDServiceClient,
+async def _polling_loop(
+    ptz_client: ptz_service_connect.PTZServiceClient,
     camera_id: str,
     verbose: bool,
     virtual_ptz: bool = False,
 ) -> None:
-    logger.info("PTZ制御コマンド購読ループを開始します: camera_id=%s", camera_id)
+    """PTZサービスへのポーリングループ（500ms間隔）"""
+    global _executing_task_id, _completed_task_id, _device_status, _interrupt_requested
+
+    logger.info("PTZポーリングループを開始します: camera_id=%s", camera_id)
+
     while True:
         try:
-            request = fd_service_pb2.StreamControlCommandsRequest()
-            init = request.init
-            init.camera_id = camera_id
+            request = ptz_service_pb2.PollingRequest()
+            request.camera_id = camera_id
+            request.device_status = _device_status
+            request.camera_status = cr_service_pb2.CameraStatus.CAMERA_STATUS_ONLINE
+            request.timestamp_ms = int(time.time() * 1000)
+
+            if _completed_task_id:
+                request.completed_task_id = _completed_task_id
+            if _executing_task_id:
+                request.executing_task_id = _executing_task_id
+            if _last_ptz is not None:
+                request.current_ptz.CopyFrom(_last_ptz)
+
             if verbose:
                 logger.debug(
-                    "PTZ制御コマンド購読(init)リクエスト送信: camera_id=%s",
+                    "ポーリングリクエスト送信: camera_id=%s, device_status=%s, "
+                    "completed_task_id=%s, executing_task_id=%s",
                     camera_id,
+                    ptz_service_pb2.DeviceStatus.Name(_device_status),
+                    _completed_task_id,
+                    _executing_task_id,
                 )
-            response = await fd_client.stream_control_commands(request)
+
+            response = await ptz_client.polling(request)
+
             if verbose:
-                logger.debug("PTZ制御レスポンス(raw): %s", response)
-            if response.HasField("status"):
-                status = response.status
-                logger.info(
-                    "PTZ制御ステータス: connected=%s, message=%s",
-                    status.connected,
-                    status.message,
-                )
-            if response.HasField("command"):
-                command = response.command
-                logger.info(
-                    "PTZ制御コマンドを受信: command_id=%s, type=%s, camera_id=%s",
-                    command.command_id,
-                    command.type,
-                    command.camera_id,
-                )
-                if command.HasField("ptz_parameters"):
-                    ptz = command.ptz_parameters
+                logger.debug("ポーリングレスポンス(raw): %s", response)
+
+            _completed_task_id = ""
+
+            if response.interrupt:
+                logger.info("中断フラグを受信しました - 現在のタスクを中断します")
+                _interrupt_requested = True
+                if _executing_task_id:
                     logger.info(
-                        "PTZパラメータ: pan=%s, tilt=%s, zoom=%s, "
-                        "pan_speed=%s, tilt_speed=%s, zoom_speed=%s",
-                        ptz.pan,
-                        ptz.tilt,
-                        ptz.zoom,
-                        ptz.pan_speed,
-                        ptz.tilt_speed,
-                        ptz.zoom_speed,
+                        "実行中のタスクを中断: task_id=%s", _executing_task_id
                     )
-                result = await execute_ptz_command(command, verbose, virtual_ptz)
-                logger.info(
-                    "PTZコマンド実行完了: command_id=%s, success=%s",
-                    result.command_id,
-                    result.success,
-                )
-                await _send_command_result(fd_client, result, verbose)
-            if response.HasField("result") and verbose:
-                server_result = response.result
+                    _executing_task_id = ""
+                    _device_status = ptz_service_pb2.DeviceStatus.DEVICE_STATUS_IDLE
+
+            if response.HasField("current_command"):
+                task = response.current_command
+                if task.task_id and task.task_id != _executing_task_id:
+                    logger.info(
+                        "新しいタスクを受信: task_id=%s, layer=%s, status=%s",
+                        task.task_id,
+                        ptz_service_pb2.CommandLayer.Name(task.layer),
+                        ptz_service_pb2.TaskStatus.Name(task.status),
+                    )
+                    _executing_task_id = task.task_id
+                    _device_status = (
+                        ptz_service_pb2.DeviceStatus.DEVICE_STATUS_EXECUTING
+                    )
+
+                    success = await execute_ptz_task(task, verbose, virtual_ptz)
+
+                    if success:
+                        logger.info("タスク完了: task_id=%s", task.task_id)
+                        _completed_task_id = task.task_id
+                    else:
+                        logger.error("タスク失敗: task_id=%s", task.task_id)
+
+                    _executing_task_id = ""
+                    _device_status = ptz_service_pb2.DeviceStatus.DEVICE_STATUS_IDLE
+
+            if response.HasField("next_command") and verbose:
+                next_task = response.next_command
                 logger.debug(
-                    "PTZ制御結果レスポンスを受信: command_id=%s, success=%s",
-                    server_result.command_id,
-                    server_result.success,
+                    "次のタスク(プリフェッチ): task_id=%s, layer=%s",
+                    next_task.task_id,
+                    ptz_service_pb2.CommandLayer.Name(next_task.layer),
                 )
+
         except ConnectError as e:
-            logger.error("PTZ制御コマンド購読接続エラー: %s", e, exc_info=verbose)
+            logger.error("PTZポーリング接続エラー: %s", e, exc_info=verbose)
         except Exception as e:
-            logger.error("PTZ制御コマンド購読処理エラー: %s", e, exc_info=verbose)
+            logger.error("PTZポーリング処理エラー: %s", e, exc_info=verbose)
+
         await asyncio.sleep(PTZ_POLL_INTERVAL_SEC)
 
 
-async def _send_camera_state_loop(
-    fd_client: fd_service_connect.FDServiceClient,
-    camera_id: str,
-    verbose: bool,
-) -> None:
-    logger.info("PTZカメラ状態報告ループを開始します: camera_id=%s", camera_id)
-    while True:
-        try:
-            request = fd_service_pb2.StreamControlCommandsRequest()
-            state = request.state
-            state.camera_id = camera_id
-            state.updated_at_ms = int(time.time() * 1000)
-            state.is_moving = False
-            state.has_error = False
-            if _last_ptz is not None:
-                state.current_ptz.CopyFrom(_last_ptz)
-            if verbose:
-                logger.debug("PTZカメラ状態を送信: camera_id=%s", camera_id)
-            response = await fd_client.stream_control_commands(request)
-            if response.HasField("status"):
-                status = response.status
-                logger.info(
-                    "PTZカメラ状態送信ステータス: connected=%s, message=%s",
-                    status.connected,
-                    status.message,
-                )
-            if response.HasField("command") and verbose:
-                command = response.command
-                logger.debug(
-                    "状態報告レスポンスでPTZコマンドを受信(無視): "
-                    "command_id=%s, type=%s, camera_id=%s",
-                    command.command_id,
-                    command.type,
-                    command.camera_id,
-                )
-            if response.HasField("result") and verbose:
-                result = response.result
-                logger.debug(
-                    "状態報告レスポンスで結果を受信(無視): command_id=%s, success=%s",
-                    result.command_id,
-                    result.success,
-                )
-        except ConnectError as e:
-            logger.error("PTZカメラ状態報告接続エラー: %s", e, exc_info=verbose)
-        except Exception as e:
-            logger.error("PTZカメラ状態報告処理エラー: %s", e, exc_info=verbose)
-        await asyncio.sleep(STATE_REPORT_INTERVAL_SEC)
-
-
 async def handle_ptz_stream(
-    fd_service_url: str,
+    ptz_service_url: str,
     camera_id: str,
     insecure: bool,
     verbose: bool,
     virtual_ptz: bool = False,
     gui_port: int | None = None,
 ) -> None:
+    """PTZストリーム処理のエントリポイント"""
     http_client: httpx.AsyncClient | None = None
-    fd_client: fd_service_connect.FDServiceClient | None = None
+    ptz_client: ptz_service_connect.PTZServiceClient | None = None
+
     try:
         verify = not insecure
         http_client = httpx.AsyncClient(verify=verify)
-        fd_client = fd_service_connect.FDServiceClient(
-            fd_service_url,
+        ptz_client = ptz_service_connect.PTZServiceClient(
+            ptz_service_url,
             session=http_client,
         )
-        if fd_client is None:
-            raise RuntimeError("FDServiceClient is not initialized")
+
+        if ptz_client is None:
+            raise RuntimeError("PTZServiceClient is not initialized")
+
         mode_str = "仮想PTZモード" if virtual_ptz else "実機PTZモード"
-        logger.info("PTZ制御ストリーム処理を開始します: camera_id=%s, mode=%s", camera_id, mode_str)
-        
+        logger.info(
+            "PTZ制御ストリーム処理を開始します: camera_id=%s, mode=%s",
+            camera_id,
+            mode_str,
+        )
+
         if virtual_ptz and gui_port is not None:
             start_gui_server(gui_port)
-            logger.info(f"仮想PTZ GUIをブラウザで開いてください: http://localhost:{gui_port}")
-        
-        await asyncio.gather(
-            _poll_ptz_commands(fd_client, camera_id, verbose, virtual_ptz),
-            _send_camera_state_loop(fd_client, camera_id, verbose),
-        )
+            logger.info(
+                f"仮想PTZ GUIをブラウザで開いてください: http://localhost:{gui_port}"
+            )
+
+        await _polling_loop(ptz_client, camera_id, verbose, virtual_ptz)
+
     except Exception as e:
         logger.error("PTZ制御ストリーム全体エラー: %s", e, exc_info=verbose)
     finally:
@@ -535,52 +489,202 @@ async def handle_ptz_stream(
         logger.info("PTZ制御ストリーム処理を終了します")
 
 
-async def execute_ptz_command(
-    command: fd_service_pb2.ControlCommand,
+async def execute_ptz_task(
+    task: ptz_service_pb2.Task,
     verbose: bool,
     virtual_ptz: bool = False,
-) -> fd_service_pb2.ControlCommandResult:
-    result = fd_service_pb2.ControlCommandResult()
-    result.command_id = command.command_id
-    result.success = True
+) -> bool:
+    """PTZタスクを実行する"""
+    global _last_ptz, _interrupt_requested
 
     try:
-        command_type_name = fd_service_pb2.ControlCommandType.Name(command.type)
-        logger.info(f"PTZコマンド実行: type={command_type_name}")
+        if task.HasField("ptz_command"):
+            ptz_cmd = task.ptz_command
+            op_type = ptz_cmd.operation_type
+            op_type_name = ptz_service_pb2.PTZOperationType.Name(op_type)
+            logger.info(f"PTZコマンド実行: task_id={task.task_id}, type={op_type_name}")
 
-        if command.HasField("ptz_parameters"):
-            global _last_ptz
-            ptz = command.ptz_parameters
+            if op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_ABSOLUTE_MOVE:
+                if ptz_cmd.HasField("absolute_move"):
+                    await _execute_absolute_move(
+                        ptz_cmd.absolute_move, verbose, virtual_ptz
+                    )
+            elif op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_RELATIVE_MOVE:
+                if ptz_cmd.HasField("relative_move"):
+                    await _execute_relative_move(
+                        ptz_cmd.relative_move, verbose, virtual_ptz
+                    )
+            elif op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_CONTINUOUS_MOVE:
+                if ptz_cmd.HasField("continuous_move"):
+                    await _execute_continuous_move(
+                        ptz_cmd.continuous_move, verbose, virtual_ptz
+                    )
+
+        elif task.HasField("cinematic_command"):
             logger.info(
-                f"PTZパラメータ適用: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
+                "シネマティックコマンドを受信: task_id=%s (未実装)",
+                task.task_id,
             )
 
-            if virtual_ptz:
-                logger.info(
-                    "[仮想PTZ] ハードウェア制御をスキップ: "
-                    f"pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
-                )
-            else:
-                controller = get_servo_controller()
-                if controller is not None:
-                    try:
-                        pan_angle = max(0, min(180, int(ptz.pan)))
-                        tilt_angle = max(0, min(180, int(ptz.tilt)))
-                        controller.move_both(pan_angle, tilt_angle)
-                        logger.info(
-                            f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}"
-                        )
-                    except Exception as e:
-                        logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
-
-            result.resulting_ptz.CopyFrom(ptz)
-            _last_ptz = ptz
-
-        result.execution_time_ms = 100
+        return True
 
     except Exception as e:
-        logger.error(f"PTZコマンド実行エラー: {e}", exc_info=verbose)
-        result.success = False
-        result.error_message = str(e)
+        logger.error(f"PTZタスク実行エラー: {e}", exc_info=verbose)
+        return False
 
-    return result
+
+async def _execute_absolute_move(
+    cmd: ptz_service_pb2.AbsoluteMoveCommand,
+    verbose: bool,
+    virtual_ptz: bool,
+) -> None:
+    """AbsoluteMove命令を実行"""
+    global _last_ptz
+
+    pos = cmd.position
+    speed = cmd.speed if cmd.HasField("speed") else None
+
+    logger.info(
+        f"AbsoluteMove実行: x={pos.x}, y={pos.y}, z={pos.z}"
+        + (f", speed=({speed.pan_speed}, {speed.tilt_speed}, {speed.zoom_speed})"
+           if speed else "")
+    )
+
+    ptz = cinematography_pb2.PTZParameters()
+    ptz.pan = pos.x * 180.0
+    ptz.tilt = pos.y * 90.0
+    ptz.zoom = pos.z
+    if speed:
+        ptz.pan_speed = speed.pan_speed
+        ptz.tilt_speed = speed.tilt_speed
+        ptz.zoom_speed = speed.zoom_speed
+
+    if virtual_ptz:
+        logger.info(
+            f"[仮想PTZ] AbsoluteMove: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
+        )
+    else:
+        controller = get_servo_controller()
+        if controller is not None:
+            try:
+                pan_angle = max(0, min(180, int(ptz.pan + 90)))
+                tilt_angle = max(0, min(180, int(ptz.tilt + 90)))
+                controller.move_both(pan_angle, tilt_angle)
+                logger.info(f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}")
+            except Exception as e:
+                logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
+
+    _last_ptz = ptz
+
+
+async def _execute_relative_move(
+    cmd: ptz_service_pb2.RelativeMoveCommand,
+    verbose: bool,
+    virtual_ptz: bool,
+) -> None:
+    """RelativeMove命令を実行"""
+    global _last_ptz
+
+    trans = cmd.translation
+    speed = cmd.speed if cmd.HasField("speed") else None
+
+    logger.info(
+        f"RelativeMove実行: pan_delta={trans.pan_delta}, "
+        f"tilt_delta={trans.tilt_delta}, zoom_delta={trans.zoom_delta}"
+    )
+
+    ptz = cinematography_pb2.PTZParameters()
+    if _last_ptz:
+        ptz.CopyFrom(_last_ptz)
+
+    ptz.pan += trans.pan_delta
+    ptz.tilt += trans.tilt_delta
+    ptz.zoom += trans.zoom_delta
+
+    if speed:
+        ptz.pan_speed = speed.pan_speed
+        ptz.tilt_speed = speed.tilt_speed
+        ptz.zoom_speed = speed.zoom_speed
+
+    if virtual_ptz:
+        logger.info(
+            f"[仮想PTZ] RelativeMove結果: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
+        )
+    else:
+        controller = get_servo_controller()
+        if controller is not None:
+            try:
+                pan_angle = max(0, min(180, int(ptz.pan + 90)))
+                tilt_angle = max(0, min(180, int(ptz.tilt + 90)))
+                controller.move_both(pan_angle, tilt_angle)
+                logger.info(f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}")
+            except Exception as e:
+                logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
+
+    _last_ptz = ptz
+
+
+async def _execute_continuous_move(
+    cmd: ptz_service_pb2.ContinuousMoveCommand,
+    verbose: bool,
+    virtual_ptz: bool,
+) -> None:
+    """ContinuousMove命令を実行（ジョイスティック用）"""
+    global _last_ptz, _interrupt_requested
+
+    vel = cmd.velocity
+    timeout_ms = cmd.timeout_ms if cmd.timeout_ms > 0 else 500
+
+    logger.info(
+        f"ContinuousMove実行: pan_velocity={vel.pan_velocity}, "
+        f"tilt_velocity={vel.tilt_velocity}, zoom_velocity={vel.zoom_velocity}, "
+        f"timeout_ms={timeout_ms}"
+    )
+
+    ptz = cinematography_pb2.PTZParameters()
+    if _last_ptz:
+        ptz.CopyFrom(_last_ptz)
+
+    ptz.pan_speed = abs(vel.pan_velocity)
+    ptz.tilt_speed = abs(vel.tilt_velocity)
+    ptz.zoom_speed = abs(vel.zoom_velocity)
+
+    start_time = time.time()
+    step_interval = 0.05
+
+    while (time.time() - start_time) * 1000 < timeout_ms:
+        if _interrupt_requested:
+            logger.info("ContinuousMove: 中断リクエストを受信しました")
+            _interrupt_requested = False
+            break
+
+        ptz.pan += vel.pan_velocity * step_interval * 10
+        ptz.tilt += vel.tilt_velocity * step_interval * 10
+        ptz.zoom += vel.zoom_velocity * step_interval
+
+        ptz.pan = max(-180.0, min(180.0, ptz.pan))
+        ptz.tilt = max(-90.0, min(90.0, ptz.tilt))
+        ptz.zoom = max(0.0, min(1.0, ptz.zoom))
+
+        if virtual_ptz:
+            if verbose:
+                logger.debug(
+                    f"[仮想PTZ] ContinuousMove: pan={ptz.pan:.2f}, "
+                    f"tilt={ptz.tilt:.2f}, zoom={ptz.zoom:.2f}"
+                )
+        else:
+            controller = get_servo_controller()
+            if controller is not None:
+                try:
+                    pan_angle = max(0, min(180, int(ptz.pan + 90)))
+                    tilt_angle = max(0, min(180, int(ptz.tilt + 90)))
+                    controller.move_both(pan_angle, tilt_angle)
+                except Exception as e:
+                    logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
+
+        _last_ptz = ptz
+        await asyncio.sleep(step_interval)
+
+    logger.info(
+        f"ContinuousMove完了: pan={ptz.pan:.2f}, tilt={ptz.tilt:.2f}, zoom={ptz.zoom:.2f}"
+    )

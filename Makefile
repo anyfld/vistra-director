@@ -20,7 +20,7 @@ register-camera:
 		$(if $(NO_PTZ),--no-ptz,--supports-ptz) \
 		$(if $(VIRTUAL_PTZ),--virtual-ptz,) \
 		$(if $(VIRTUAL_PTZ_GUI_PORT),--virtual-ptz-gui-port $(VIRTUAL_PTZ_GUI_PORT),) \
-		$(if $(FD_SERVICE_URL),--fd-service-url $(FD_SERVICE_URL),) \
+		$(if $(PTZ_SERVICE_URL),--ptz-service-url $(PTZ_SERVICE_URL),) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
 		$(if $(VERBOSE),--verbose,)

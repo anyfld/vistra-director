@@ -142,23 +142,23 @@ async def register_camera(args: argparse.Namespace) -> None:
 
         camera_id = await do_register_camera(client, request, args.verbose)
 
-        if args.supports_ptz and args.fd_service_url:
+        if args.supports_ptz and args.ptz_service_url:
             logger.info("PTZ制御ストリーム処理を開始します")
             virtual_ptz = getattr(args, "virtual_ptz", False)
             gui_port = getattr(args, "virtual_ptz_gui_port", None)
             if virtual_ptz and gui_port == 0:
                 gui_port = None
             await handle_ptz_stream(
-                args.fd_service_url,
+                args.ptz_service_url,
                 camera_id,
                 args.insecure,
                 args.verbose,
                 virtual_ptz,
                 gui_port,
             )
-        elif args.supports_ptz and not args.fd_service_url:
+        elif args.supports_ptz and not args.ptz_service_url:
             logger.warning(
-                "PTZサポートが有効ですが、--fd-service-urlが指定されていません。PTZ制御ストリームは開始されません。"
+                "PTZサポートが有効ですが、--ptz-service-urlが指定されていません。PTZ制御ストリームは開始されません。"
             )
 
     except KeyboardInterrupt:
