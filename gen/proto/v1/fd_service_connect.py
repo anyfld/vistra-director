@@ -40,7 +40,7 @@ class FDService(Protocol):
     async def send_control_command(self, request: v1_dot_fd__service__pb2.SendControlCommandRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
+    def stream_control_commands(self, request: AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest], ctx: RequestContext) -> AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
     async def report_camera_state(self, request: v1_dot_fd__service__pb2.ReportCameraStateRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.ReportCameraStateResponse:
@@ -135,7 +135,7 @@ class FDServiceASGIApplication(ConnectASGIApplication[FDService]):
                     ),
                     function=svc.send_control_command,
                 ),
-                "/v1.FDService/StreamControlCommands": Endpoint.server_stream(
+                "/v1.FDService/StreamControlCommands": Endpoint.bidi_stream(
                     method=MethodInfo(
                         name="StreamControlCommands",
                         service_name="v1.FDService",
@@ -339,12 +339,12 @@ class FDServiceClient(ConnectClient):
 
     def stream_control_commands(
         self,
-        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
+        request: AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest],
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
     ) -> AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
-        return self.execute_server_stream(
+        return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
                 name="StreamControlCommands",
@@ -415,7 +415,7 @@ class FDServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def send_control_command(self, request: v1_dot_fd__service__pb2.SendControlCommandRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> Iterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
+    def stream_control_commands(self, request: Iterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest], ctx: RequestContext) -> Iterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def report_camera_state(self, request: v1_dot_fd__service__pb2.ReportCameraStateRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.ReportCameraStateResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -507,7 +507,7 @@ class FDServiceWSGIApplication(ConnectWSGIApplication):
                     ),
                     function=service.send_control_command,
                 ),
-                "/v1.FDService/StreamControlCommands": EndpointSync.server_stream(
+                "/v1.FDService/StreamControlCommands": EndpointSync.bidi_stream(
                     method=MethodInfo(
                         name="StreamControlCommands",
                         service_name="v1.FDService",
@@ -711,12 +711,12 @@ class FDServiceClientSync(ConnectClientSync):
 
     def stream_control_commands(
         self,
-        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
+        request: Iterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest],
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
     ) -> Iterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
-        return self.execute_server_stream(
+        return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
                 name="StreamControlCommands",
