@@ -10,5 +10,12 @@ dependencies = [
     "httpx>=0.25.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+]
+
 [project.scripts]
 film-director = "main:main"

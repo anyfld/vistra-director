@@ -34,13 +34,7 @@ class CameraService(Protocol):
     async def switch_camera_mode(self, request: v1_dot_cd__service__pb2.SwitchCameraModeRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.SwitchCameraModeResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def heartbeat(self, request: v1_dot_cd__service__pb2.HeartbeatRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.HeartbeatResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
     def stream_connection_status(self, request: v1_dot_cd__service__pb2.StreamConnectionStatusRequest, ctx: RequestContext) -> AsyncIterator[v1_dot_cd__service__pb2.StreamConnectionStatusResponse]:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    async def get_camera_capabilities(self, request: v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -109,16 +103,6 @@ class CameraServiceASGIApplication(ConnectASGIApplication[CameraService]):
                     ),
                     function=svc.switch_camera_mode,
                 ),
-                "/v1.CameraService/Heartbeat": Endpoint.unary(
-                    method=MethodInfo(
-                        name="Heartbeat",
-                        service_name="v1.CameraService",
-                        input=v1_dot_cd__service__pb2.HeartbeatRequest,
-                        output=v1_dot_cd__service__pb2.HeartbeatResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=svc.heartbeat,
-                ),
                 "/v1.CameraService/StreamConnectionStatus": Endpoint.server_stream(
                     method=MethodInfo(
                         name="StreamConnectionStatus",
@@ -128,16 +112,6 @@ class CameraServiceASGIApplication(ConnectASGIApplication[CameraService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.stream_connection_status,
-                ),
-                "/v1.CameraService/GetCameraCapabilities": Endpoint.unary(
-                    method=MethodInfo(
-                        name="GetCameraCapabilities",
-                        service_name="v1.CameraService",
-                        input=v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-                        output=v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=svc.get_camera_capabilities,
                 ),
             },
             interceptors=interceptors,
@@ -271,26 +245,6 @@ class CameraServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    async def heartbeat(
-        self,
-        request: v1_dot_cd__service__pb2.HeartbeatRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_cd__service__pb2.HeartbeatResponse:
-        return await self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="Heartbeat",
-                service_name="v1.CameraService",
-                input=v1_dot_cd__service__pb2.HeartbeatRequest,
-                output=v1_dot_cd__service__pb2.HeartbeatResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
     def stream_connection_status(
         self,
         request: v1_dot_cd__service__pb2.StreamConnectionStatusRequest,
@@ -311,26 +265,6 @@ class CameraServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    async def get_camera_capabilities(
-        self,
-        request: v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse:
-        return await self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="GetCameraCapabilities",
-                service_name="v1.CameraService",
-                input=v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-                output=v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
 
 class CameraServiceSync(Protocol):
     def register_camera(self, request: v1_dot_cd__service__pb2.RegisterCameraRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.RegisterCameraResponse:
@@ -345,11 +279,7 @@ class CameraServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def switch_camera_mode(self, request: v1_dot_cd__service__pb2.SwitchCameraModeRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.SwitchCameraModeResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def heartbeat(self, request: v1_dot_cd__service__pb2.HeartbeatRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.HeartbeatResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def stream_connection_status(self, request: v1_dot_cd__service__pb2.StreamConnectionStatusRequest, ctx: RequestContext) -> Iterator[v1_dot_cd__service__pb2.StreamConnectionStatusResponse]:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_camera_capabilities(self, request: v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest, ctx: RequestContext) -> v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -417,16 +347,6 @@ class CameraServiceWSGIApplication(ConnectWSGIApplication):
                     ),
                     function=service.switch_camera_mode,
                 ),
-                "/v1.CameraService/Heartbeat": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="Heartbeat",
-                        service_name="v1.CameraService",
-                        input=v1_dot_cd__service__pb2.HeartbeatRequest,
-                        output=v1_dot_cd__service__pb2.HeartbeatResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=service.heartbeat,
-                ),
                 "/v1.CameraService/StreamConnectionStatus": EndpointSync.server_stream(
                     method=MethodInfo(
                         name="StreamConnectionStatus",
@@ -436,16 +356,6 @@ class CameraServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.stream_connection_status,
-                ),
-                "/v1.CameraService/GetCameraCapabilities": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="GetCameraCapabilities",
-                        service_name="v1.CameraService",
-                        input=v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-                        output=v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=service.get_camera_capabilities,
                 ),
             },
             interceptors=interceptors,
@@ -579,26 +489,6 @@ class CameraServiceClientSync(ConnectClientSync):
             timeout_ms=timeout_ms,
         )
 
-    def heartbeat(
-        self,
-        request: v1_dot_cd__service__pb2.HeartbeatRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_cd__service__pb2.HeartbeatResponse:
-        return self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="Heartbeat",
-                service_name="v1.CameraService",
-                input=v1_dot_cd__service__pb2.HeartbeatRequest,
-                output=v1_dot_cd__service__pb2.HeartbeatResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
     def stream_connection_status(
         self,
         request: v1_dot_cd__service__pb2.StreamConnectionStatusRequest,
@@ -613,26 +503,6 @@ class CameraServiceClientSync(ConnectClientSync):
                 service_name="v1.CameraService",
                 input=v1_dot_cd__service__pb2.StreamConnectionStatusRequest,
                 output=v1_dot_cd__service__pb2.StreamConnectionStatusResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
-    def get_camera_capabilities(
-        self,
-        request: v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse:
-        return self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="GetCameraCapabilities",
-                service_name="v1.CameraService",
-                input=v1_dot_cd__service__pb2.GetCameraCapabilitiesRequest,
-                output=v1_dot_cd__service__pb2.GetCameraCapabilitiesResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

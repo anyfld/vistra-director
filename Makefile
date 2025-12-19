@@ -1,4 +1,4 @@
-.PHONY: register-camera
+.PHONY: register-camera test
 
 register-camera:
 	@if [ -z "$(NAME)" ] || [ -z "$(MASTER_MF_ID)" ] || [ -z "$(ADDRESS)" ]; then \
@@ -23,3 +23,6 @@ register-camera:
 		$(if $(INSECURE),--insecure,) \
 		$(if $(VERBOSE),--verbose,) \
 		$(if $(NO_HEARTBEAT),--no-heartbeat,)
+
+test:
+	cd film-director && uv run --extra test pytest -v
