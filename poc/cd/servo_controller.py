@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
+import logging
 import serial
 import serial.tools.list_ports
 import time
 import threading
 from typing import Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 class ServoController:
@@ -32,7 +36,7 @@ class ServoController:
         raise RuntimeError("Arduino not found")
 
     def connect(self) -> None:
-        print(f"Connecting to {self.port}...")
+        logger.info("Connecting to USB serial port: %s", self.port)
         self.serial = serial.Serial(
             port=self.port, baudrate=self.baudrate, timeout=self.timeout
         )
@@ -40,20 +44,26 @@ class ServoController:
         while self.serial.in_waiting > 0:
             self.serial.readline()
         self._query_positions()
-        print("Connected!")
+        logger.info("USB serial connection established: %s", self.port)
 
     def disconnect(self) -> None:
         if self.serial and self.serial.is_open:
             self.serial.close()
-            print("Disconnected.")
+            logger.info("USB serial connection closed: %s", self.port)
 
     def set_speed(self, delay_ms: float) -> None:
         self.step_delay = delay_ms / 1000.0
-        print(f"Speed: {delay_ms}ms/step")
+        logger.info("Servo step speed set: %.1f ms/step", delay_ms)
 
     def _send_command_fast(self, servo_id: int, angle: int) -> None:
         assert self.serial is not None, "Serial connection not established"
         command = f"{servo_id},{angle}\n"
+        logger.debug(
+            "USB serial send (fast): port=%s, servo_id=%s, angle=%s",
+            self.port,
+            servo_id,
+            angle,
+        )
         self.serial.write(command.encode("utf-8"))
         self.servo_positions[servo_id] = angle
 
@@ -61,6 +71,12 @@ class ServoController:
         assert self.serial is not None, "Serial connection not established"
         with self._lock:
             command = f"{servo_id},{angle}\n"
+            logger.debug(
+                "USB serial send: port=%s, servo_id=%s, angle=%s",
+                self.port,
+                servo_id,
+                angle,
+            )
             self.serial.write(command.encode("utf-8"))
             start_time = time.time()
             while time.time() - start_time < 1.0:
@@ -99,7 +115,13 @@ class ServoController:
         if current == target_angle:
             return
 
-        print(f"  Servo {servo_id}: {current}° -> {target_angle}°")
+        logger.info(
+            "Servo move: port=%s, servo_id=%s, from=%s°, to=%s°",
+            self.port,
+            servo_id,
+            current,
+            target_angle,
+        )
         self._flush_input()
 
         step = 1 if target_angle > current else -1
@@ -122,8 +144,14 @@ class ServoController:
         if diff1 == 0 and diff2 == 0:
             return
 
-        print(f"  Servo 1: {current1}° -> {target1}°")
-        print(f"  Servo 2: {current2}° -> {target2}°")
+        logger.info(
+            "Servo move both: port=%s, servo1=%s°->%s°, servo2=%s°->%s°",
+            self.port,
+            current1,
+            target1,
+            current2,
+            target2,
+        )
 
         max_steps = max(abs(diff1), abs(diff2))
         if max_steps == 0:
@@ -149,7 +177,7 @@ class ServoController:
         return self.servo_positions.copy()
 
     def center_all(self) -> None:
-        print("Centering...")
+        logger.info("Centering all servos to 90°")
         self.move_both(90, 90)
 
     def __enter__(self):
@@ -162,7 +190,7 @@ class ServoController:
 
 def list_ports():
     ports = serial.tools.list_ports.comports()
-    print("Available ports:")
+    logger.info("Available USB serial ports:")
     for port in ports:
-        print(f"  {port.device}: {port.description}")
+        logger.info("  %s: %s", port.device, port.description)
 

@@ -8,6 +8,7 @@ dependencies = [
     "connect-python>=0.6.0",
     "protobuf>=6.0.0",
     "httpx[http2]>=0.25.0",
+    "pyserial>=3.5",
 ]
 
 [project.optional-dependencies]
