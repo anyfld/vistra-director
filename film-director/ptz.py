@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 _servo_controller: "ServoController | None" = None
 _last_ptz: "fd_service_pb2.PTZParameters | None" = None
 
+PTZ_POLL_INTERVAL_SEC = 1.0
+STATE_REPORT_INTERVAL_SEC = 5.0
+
 
 def get_servo_controller() -> "ServoController | None":
     global _servo_controller
@@ -45,6 +48,160 @@ def get_servo_controller() -> "ServoController | None":
     return _servo_controller
 
 
+async def _send_command_result(
+    fd_client: fd_service_connect.FDServiceClient,
+    result: fd_service_pb2.ControlCommandResult,
+    verbose: bool,
+) -> None:
+    request = fd_service_pb2.StreamControlCommandsRequest()
+    request.result.CopyFrom(result)
+    if verbose:
+        logger.debug(
+            "PTZ制御結果を送信: command_id=%s, success=%s",
+            result.command_id,
+            result.success,
+        )
+    response = await fd_client.stream_control_commands(request)
+    if response.HasField("status"):
+        status = response.status
+        logger.info(
+            "PTZ制御結果送信ステータス: connected=%s, message=%s",
+            status.connected,
+            status.message,
+        )
+    if response.HasField("command") and verbose:
+        command = response.command
+        logger.debug(
+            "結果送信レスポンスでPTZコマンドを受信: command_id=%s, type=%s, camera_id=%s",
+            command.command_id,
+            command.type,
+            command.camera_id,
+        )
+    if response.HasField("result") and verbose:
+        result_response = response.result
+        logger.debug(
+            "結果送信レスポンスで結果を受信: command_id=%s, success=%s",
+            result_response.command_id,
+            result_response.success,
+        )
+
+
+async def _poll_ptz_commands(
+    fd_client: fd_service_connect.FDServiceClient,
+    camera_id: str,
+    verbose: bool,
+) -> None:
+    logger.info("PTZ制御コマンド購読ループを開始します: camera_id=%s", camera_id)
+    while True:
+        try:
+            request = fd_service_pb2.StreamControlCommandsRequest()
+            init = request.init
+            init.camera_id = camera_id
+            if verbose:
+                logger.debug(
+                    "PTZ制御コマンド購読(init)リクエスト送信: camera_id=%s",
+                    camera_id,
+                )
+            response = await fd_client.stream_control_commands(request)
+            if verbose:
+                logger.debug("PTZ制御レスポンス(raw): %s", response)
+            if response.HasField("status"):
+                status = response.status
+                logger.info(
+                    "PTZ制御ステータス: connected=%s, message=%s",
+                    status.connected,
+                    status.message,
+                )
+            if response.HasField("command"):
+                command = response.command
+                logger.info(
+                    "PTZ制御コマンドを受信: command_id=%s, type=%s, camera_id=%s",
+                    command.command_id,
+                    command.type,
+                    command.camera_id,
+                )
+                if command.HasField("ptz_parameters"):
+                    ptz = command.ptz_parameters
+                    logger.info(
+                        "PTZパラメータ: pan=%s, tilt=%s, zoom=%s, "
+                        "pan_speed=%s, tilt_speed=%s, zoom_speed=%s",
+                        ptz.pan,
+                        ptz.tilt,
+                        ptz.zoom,
+                        ptz.pan_speed,
+                        ptz.tilt_speed,
+                        ptz.zoom_speed,
+                    )
+                result = await execute_ptz_command(command, verbose)
+                logger.info(
+                    "PTZコマンド実行完了: command_id=%s, success=%s",
+                    result.command_id,
+                    result.success,
+                )
+                await _send_command_result(fd_client, result, verbose)
+            if response.HasField("result") and verbose:
+                server_result = response.result
+                logger.debug(
+                    "PTZ制御結果レスポンスを受信: command_id=%s, success=%s",
+                    server_result.command_id,
+                    server_result.success,
+                )
+        except ConnectError as e:
+            logger.error("PTZ制御コマンド購読接続エラー: %s", e, exc_info=verbose)
+        except Exception as e:
+            logger.error("PTZ制御コマンド購読処理エラー: %s", e, exc_info=verbose)
+        await asyncio.sleep(PTZ_POLL_INTERVAL_SEC)
+
+
+async def _send_camera_state_loop(
+    fd_client: fd_service_connect.FDServiceClient,
+    camera_id: str,
+    verbose: bool,
+) -> None:
+    logger.info("PTZカメラ状態報告ループを開始します: camera_id=%s", camera_id)
+    while True:
+        try:
+            request = fd_service_pb2.StreamControlCommandsRequest()
+            state = request.state
+            state.camera_id = camera_id
+            state.updated_at_ms = int(time.time() * 1000)
+            state.is_moving = False
+            state.has_error = False
+            if _last_ptz is not None:
+                state.current_ptz.CopyFrom(_last_ptz)
+            if verbose:
+                logger.debug("PTZカメラ状態を送信: camera_id=%s", camera_id)
+            response = await fd_client.stream_control_commands(request)
+            if response.HasField("status"):
+                status = response.status
+                logger.info(
+                    "PTZカメラ状態送信ステータス: connected=%s, message=%s",
+                    status.connected,
+                    status.message,
+                )
+            if response.HasField("command") and verbose:
+                command = response.command
+                logger.debug(
+                    "状態報告レスポンスでPTZコマンドを受信(無視): "
+                    "command_id=%s, type=%s, camera_id=%s",
+                    command.command_id,
+                    command.type,
+                    command.camera_id,
+                )
+            if response.HasField("result") and verbose:
+                result = response.result
+                logger.debug(
+                    "状態報告レスポンスで結果を受信(無視): command_id=%s, success=%s",
+                    result.command_id,
+                    result.success,
+                )
+        except ConnectError as e:
+            logger.error("PTZカメラ状態報告接続エラー: %s", e, exc_info=verbose)
+        except Exception as e:
+            logger.error("PTZカメラ状態報告処理エラー: %s", e, exc_info=verbose)
+        await asyncio.sleep(STATE_REPORT_INTERVAL_SEC)
+
+
 async def handle_ptz_stream(
     fd_service_url: str,
     camera_id: str,
@@ -53,9 +210,6 @@ async def handle_ptz_stream(
 ) -> None:
     http_client: httpx.AsyncClient | None = None
     fd_client: fd_service_connect.FDServiceClient | None = None
-    last_result: fd_service_pb2.ControlCommandResult | None = None
-    initialized = False
-
     try:
         verify = not insecure
         http_client = httpx.AsyncClient(verify=verify)
@@ -63,106 +217,19 @@ async def handle_ptz_stream(
             fd_service_url,
             session=http_client,
         )
-
-        logger.info("PTZ制御ポーリングを開始します: camera_id=%s", camera_id)
-
-        while True:
-            try:
-                request = fd_service_pb2.StreamControlCommandsRequest()
-
-                if not initialized:
-                    init = request.init
-                    init.camera_id = camera_id
-                    initialized = True
-                    if verbose:
-                        logger.debug("PTZ制御初期化リクエスト送信: camera_id=%s", camera_id)
-                elif last_result is not None:
-                    request.result.CopyFrom(last_result)
-                    if verbose:
-                        logger.debug(
-                            "PTZ制御結果を送信: command_id=%s, success=%s",
-                            last_result.command_id,
-                            last_result.success,
-                        )
-                    last_result = None
-                else:
-                    state = request.state
-                    state.camera_id = camera_id
-                    state.updated_at_ms = int(time.time() * 1000)
-                    state.is_moving = False
-                    state.has_error = False
-                    if _last_ptz is not None:
-                        state.current_ptz.CopyFrom(_last_ptz)
-                    if verbose:
-                        logger.debug("PTZ制御状態を送信: camera_id=%s", camera_id)
-
-                if fd_client is None:
-                    raise RuntimeError("FDServiceClient is not initialized")
-
-                response = await fd_client.stream_control_commands(request)
-
-                if verbose:
-                    logger.debug("PTZ制御レスポンス(raw): %s", response)
-
-                if response.HasField("command"):
-                    command = response.command
-                    logger.info(
-                        "PTZ制御コマンドを受信: command_id=%s, type=%s, camera_id=%s",
-                        command.command_id,
-                        command.type,
-                        command.camera_id,
-                    )
-
-                    if command.HasField("ptz_parameters"):
-                        ptz = command.ptz_parameters
-                        logger.info(
-                            "PTZパラメータ: pan=%s, tilt=%s, zoom=%s, "
-                            "pan_speed=%s, tilt_speed=%s, zoom_speed=%s",
-                            ptz.pan,
-                            ptz.tilt,
-                            ptz.zoom,
-                            ptz.pan_speed,
-                            ptz.tilt_speed,
-                            ptz.zoom_speed,
-                        )
-
-                    last_result = await execute_ptz_command(command, verbose)
-
-                    logger.info(
-                        "PTZコマンド実行完了: command_id=%s, success=%s",
-                        last_result.command_id,
-                        last_result.success,
-                    )
-
-                elif response.HasField("status"):
-                    status = response.status
-                    logger.info(
-                        "PTZ制御ステータス: connected=%s, message=%s",
-                        status.connected,
-                        status.message,
-                    )
-
-                elif response.HasField("result") and verbose:
-                    result = response.result
-                    logger.debug(
-                        "PTZ制御結果レスポンスを受信: command_id=%s, success=%s",
-                        result.command_id,
-                        result.success,
-                    )
-
-            except ConnectError as e:
-                logger.error("PTZ制御ポーリング接続エラー: %s", e, exc_info=verbose)
-            except Exception as e:
-                logger.error("PTZ制御ポーリング処理エラー: %s", e, exc_info=verbose)
-
-            await asyncio.sleep(1)
-
+        if fd_client is None:
+            raise RuntimeError("FDServiceClient is not initialized")
+        logger.info("PTZ制御ストリーム処理を開始します: camera_id=%s", camera_id)
+        await asyncio.gather(
+            _poll_ptz_commands(fd_client, camera_id, verbose),
+            _send_camera_state_loop(fd_client, camera_id, verbose),
+        )
     except Exception as e:
-        logger.error("PTZ制御ポーリング全体エラー: %s", e, exc_info=verbose)
+        logger.error("PTZ制御ストリーム全体エラー: %s", e, exc_info=verbose)
     finally:
         if http_client:
             await http_client.aclose()
-        logger.info("PTZ制御ポーリング処理を終了します")
+        logger.info("PTZ制御ストリーム処理を終了します")
 
 
 async def execute_ptz_command(

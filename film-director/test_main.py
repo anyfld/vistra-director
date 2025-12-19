@@ -86,7 +86,7 @@ async def test_handle_ptz_stream_initialization():
     camera_id = "test-camera-1"
     fd_service_url = "http://localhost:8081"
 
-    # モックのレスポンスを作成
+    # モックのレスポンスを作成（単一レスポンスのunary RPCに合わせる）
     init_response = fd_service_pb2.StreamControlCommandsResponse()
     init_response.status.connected = True
     init_response.status.message = "Connected"
@@ -105,15 +105,12 @@ async def test_handle_ptz_stream_initialization():
     command_response.command.ptz_parameters.CopyFrom(ptz)
     command_response.timestamp_ms = 2000
 
-    # ストリームイテレータをモック
-    async def mock_stream():
-        yield init_response
-        yield command_response
-        await asyncio.sleep(0.1)  # 少し待機してから終了
-
     with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
-        mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
+        # 最初の呼び出しでステータス、次の呼び出しでコマンドを返す
+        mock_client.stream_control_commands = AsyncMock(
+            side_effect=[init_response, command_response]
+        )
         mock_client_class.return_value = mock_client
 
         with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
@@ -155,13 +152,9 @@ async def test_handle_ptz_stream_command_processing():
     command_response.command.ptz_parameters.CopyFrom(ptz)
     command_response.timestamp_ms = 3000
 
-    async def mock_stream():
-        yield command_response
-        await asyncio.sleep(0.1)
-
     with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
-        mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
+        mock_client.stream_control_commands = AsyncMock(return_value=command_response)
         mock_client_class.return_value = mock_client
 
         with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
@@ -218,13 +211,9 @@ async def test_handle_ptz_stream_status_message():
     status_response.status.message = "Stream active"
     status_response.timestamp_ms = 4000
 
-    async def mock_stream():
-        yield status_response
-        await asyncio.sleep(0.1)
-
     with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
-        mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
+        mock_client.stream_control_commands = AsyncMock(return_value=status_response)
         mock_client_class.return_value = mock_client
 
         with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
