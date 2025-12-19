@@ -14,8 +14,9 @@ project_root = Path(__file__).parent.parent
 gen_proto_path = project_root / "gen" / "proto"
 sys.path.insert(0, str(gen_proto_path))
 
+import v1.cinematography_pb2 as cinematography_pb2
 import v1.fd_service_pb2 as fd_service_pb2
-from main import execute_ptz_command, handle_ptz_stream
+from ptz import execute_ptz_command, handle_ptz_stream
 
 
 @pytest.mark.asyncio
@@ -26,7 +27,7 @@ async def test_execute_ptz_command_success():
     command.camera_id = "camera-1"
     command.type = fd_service_pb2.ControlCommandType.CONTROL_COMMAND_TYPE_PTZ_ABSOLUTE
 
-    ptz = fd_service_pb2.PTZParameters()
+    ptz = cinematography_pb2.PTZParameters()
     ptz.pan = 10.0
     ptz.tilt = 20.0
     ptz.zoom = 1.5
@@ -66,7 +67,7 @@ async def test_execute_ptz_command_relative():
     command.camera_id = "camera-1"
     command.type = fd_service_pb2.ControlCommandType.CONTROL_COMMAND_TYPE_PTZ_RELATIVE
 
-    ptz = fd_service_pb2.PTZParameters()
+    ptz = cinematography_pb2.PTZParameters()
     ptz.pan_speed = 0.5
     ptz.tilt_speed = -0.3
     ptz.zoom_speed = 0.2
@@ -97,7 +98,7 @@ async def test_handle_ptz_stream_initialization():
     command_response.command.type = (
         fd_service_pb2.ControlCommandType.CONTROL_COMMAND_TYPE_PTZ_ABSOLUTE
     )
-    ptz = fd_service_pb2.PTZParameters()
+    ptz = cinematography_pb2.PTZParameters()
     ptz.pan = 5.0
     ptz.tilt = 10.0
     ptz.zoom = 2.0
@@ -110,13 +111,14 @@ async def test_handle_ptz_stream_initialization():
         yield command_response
         await asyncio.sleep(0.1)  # 少し待機してから終了
 
-    with patch("main.fd_service_connect.FDServiceClient") as mock_client_class:
+    with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
         mock_client_class.return_value = mock_client
 
-        with patch("main.httpx.AsyncClient") as mock_http_client_class:
-            mock_http_client = MagicMock()
+        with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
+            mock_http_client = AsyncMock()
+            mock_http_client.aclose = AsyncMock()
             mock_http_client_class.return_value = mock_http_client
 
             # ストリーム処理を実行（タイムアウトを設定）
@@ -146,7 +148,7 @@ async def test_handle_ptz_stream_command_processing():
     command_response.command.type = (
         fd_service_pb2.ControlCommandType.CONTROL_COMMAND_TYPE_PTZ_ABSOLUTE
     )
-    ptz = fd_service_pb2.PTZParameters()
+    ptz = cinematography_pb2.PTZParameters()
     ptz.pan = 15.0
     ptz.tilt = 25.0
     ptz.zoom = 3.0
@@ -157,13 +159,14 @@ async def test_handle_ptz_stream_command_processing():
         yield command_response
         await asyncio.sleep(0.1)
 
-    with patch("main.fd_service_connect.FDServiceClient") as mock_client_class:
+    with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
         mock_client_class.return_value = mock_client
 
-        with patch("main.httpx.AsyncClient") as mock_http_client_class:
-            mock_http_client = MagicMock()
+        with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
+            mock_http_client = AsyncMock()
+            mock_http_client.aclose = AsyncMock()
             mock_http_client_class.return_value = mock_http_client
 
             try:
@@ -187,21 +190,20 @@ async def test_handle_ptz_stream_connection_error():
     from connectrpc.errors import ConnectError
     from connectrpc.code import Code
 
-    with patch("main.fd_service_connect.FDServiceClient") as mock_client_class:
+    with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client.stream_control_commands = AsyncMock(
             side_effect=ConnectError(Code.UNAVAILABLE, "Connection failed")
         )
         mock_client_class.return_value = mock_client
 
-        with patch("main.httpx.AsyncClient") as mock_http_client_class:
-            mock_http_client = MagicMock()
+        with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
+            mock_http_client = AsyncMock()
+            mock_http_client.aclose = AsyncMock()
             mock_http_client_class.return_value = mock_http_client
 
-            # エラーが発生しても例外が発生しないことを確認
             await handle_ptz_stream(fd_service_url, camera_id, False, False)
 
-            # HTTPクライアントが閉じられたことを確認
             mock_http_client.aclose.assert_called_once()
 
 
@@ -220,13 +222,14 @@ async def test_handle_ptz_stream_status_message():
         yield status_response
         await asyncio.sleep(0.1)
 
-    with patch("main.fd_service_connect.FDServiceClient") as mock_client_class:
+    with patch("ptz.fd_service_connect.FDServiceClient") as mock_client_class:
         mock_client = MagicMock()
         mock_client.stream_control_commands = AsyncMock(return_value=mock_stream())
         mock_client_class.return_value = mock_client
 
-        with patch("main.httpx.AsyncClient") as mock_http_client_class:
-            mock_http_client = MagicMock()
+        with patch("ptz.httpx.AsyncClient") as mock_http_client_class:
+            mock_http_client = AsyncMock()
+            mock_http_client.aclose = AsyncMock()
             mock_http_client_class.return_value = mock_http_client
 
             try:
