@@ -79,7 +79,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
       - name: Run Type Checker
-        run: uvx ty check
+        run: uvx --python $(uv run which python) ty check
 
   test-film-director:
     name: Test film-director
