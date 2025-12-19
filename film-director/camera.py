@@ -134,7 +134,7 @@ async def register_camera(args: argparse.Namespace) -> None:
 
     try:
         verify = not args.insecure
-        http_client = httpx.AsyncClient(verify=verify, http2=True)
+        http_client = httpx.AsyncClient(verify=verify)
         client = cd_service_connect.CameraServiceClient(
             args.url,
             session=http_client,

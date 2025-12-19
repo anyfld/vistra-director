@@ -58,7 +58,7 @@ async def handle_ptz_stream(
 
     try:
         verify = not insecure
-        http_client = httpx.AsyncClient(verify=verify, http2=True)
+        http_client = httpx.AsyncClient(verify=verify)
         fd_client = fd_service_connect.FDServiceClient(
             fd_service_url,
             session=http_client,
