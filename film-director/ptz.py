@@ -346,6 +346,7 @@ class PTZGUIHandler(BaseHTTPRequestHandler):
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """マルチスレッド対応HTTPサーバー"""
+
     pass
 
 
@@ -441,9 +442,7 @@ async def _polling_loop(
                 logger.info("中断フラグを受信しました - 現在のタスクを中断します")
                 _interrupt_requested = True
                 if _executing_task_id:
-                    logger.info(
-                        "実行中のタスクを中断: task_id=%s", _executing_task_id
-                    )
+                    logger.info("実行中のタスクを中断: task_id=%s", _executing_task_id)
                     _executing_task_id = ""
                     _device_status = ptz_service_pb2.DeviceStatus.DEVICE_STATUS_IDLE
 
@@ -559,17 +558,26 @@ async def execute_ptz_task(
             op_type_name = ptz_service_pb2.PTZOperationType.Name(op_type)
             logger.info(f"PTZコマンド実行: task_id={task.task_id}, type={op_type_name}")
 
-            if op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_ABSOLUTE_MOVE:
+            if (
+                op_type
+                == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_ABSOLUTE_MOVE
+            ):
                 if ptz_cmd.HasField("absolute_move"):
                     await _execute_absolute_move(
                         ptz_cmd.absolute_move, verbose, virtual_ptz
                     )
-            elif op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_RELATIVE_MOVE:
+            elif (
+                op_type
+                == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_RELATIVE_MOVE
+            ):
                 if ptz_cmd.HasField("relative_move"):
                     await _execute_relative_move(
                         ptz_cmd.relative_move, verbose, virtual_ptz
                     )
-            elif op_type == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_CONTINUOUS_MOVE:
+            elif (
+                op_type
+                == ptz_service_pb2.PTZOperationType.PTZ_OPERATION_TYPE_CONTINUOUS_MOVE
+            ):
                 if ptz_cmd.HasField("continuous_move"):
                     await _execute_continuous_move(
                         ptz_cmd.continuous_move, verbose, virtual_ptz
@@ -601,8 +609,11 @@ async def _execute_absolute_move(
 
     logger.info(
         f"AbsoluteMove実行: x={pos.x}, y={pos.y}, z={pos.z}"
-        + (f", speed=({speed.pan_speed}, {speed.tilt_speed}, {speed.zoom_speed})"
-           if speed else "")
+        + (
+            f", speed=({speed.pan_speed}, {speed.tilt_speed}, {speed.zoom_speed})"
+            if speed
+            else ""
+        )
     )
 
     ptz = cinematography_pb2.PTZParameters()

@@ -20,3 +20,13 @@ test = [
 
 [project.scripts]
 film-director = "main:main"
+
+[tool.ty.environment]
+extra-paths = ["../gen/proto"]
+
+[tool.ty.src]
+exclude = ["test_*.py"]
+
+[tool.ty.rules]
+unresolved-attribute = "ignore"
+unresolved-import = "ignore"

@@ -7,7 +7,6 @@ import asyncio
 import logging
 import socket
 import sys
-from pathlib import Path
 
 from camera import register_camera
 

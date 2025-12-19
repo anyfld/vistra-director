@@ -35,7 +35,9 @@ def parse_metadata(metadata_list: list[str] | None) -> dict[str, str]:
     return result
 
 
-def build_register_request(args: argparse.Namespace) -> cd_service_pb2.RegisterCameraRequest:
+def build_register_request(
+    args: argparse.Namespace,
+) -> cd_service_pb2.RegisterCameraRequest:
     camera_mode_map = {
         "AUTONOMOUS": cr_service_pb2.CameraMode.CAMERA_MODE_AUTONOMOUS,
         "LIGHTWEIGHT": cr_service_pb2.CameraMode.CAMERA_MODE_LIGHTWEIGHT,

@@ -193,4 +193,3 @@ def list_ports():
     logger.info("Available USB serial ports:")
     for port in ports:
         logger.info("  %s: %s", port.device, port.description)
-

@@ -1,4 +1,4 @@
-.PHONY: register-camera test
+.PHONY: register-camera test lint format-check find-projects type-check test-film-director all-status-check
 
 register-camera:
 	@if [ -z "$(NAME)" ] || [ -z "$(MASTER_MF_ID)" ]; then \
@@ -31,3 +31,24 @@ register-camera:
 
 test:
 	cd film-director && uv run --extra test pytest -v
+
+lint:
+	uvx ruff check .
+
+format-check:
+	uvx ruff format --check --diff .
+
+find-projects:
+	@find . -type f -name pyproject.toml -exec dirname {} \;
+
+type-check:
+	@for project in $$(find . -mindepth 1 -type f -name pyproject.toml -exec dirname {} \;); do \
+		echo "Running type check in $$project"; \
+		(cd "$$project" && uv sync --dev && uvx ty check) || exit 1; \
+	done
+
+test-film-director:
+	cd film-director && uv sync --dev --extra test && uv run --extra test pytest
+
+all-status-check: lint format-check type-check test-film-director
+	@echo "All status checks passed"

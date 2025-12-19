@@ -13,7 +13,6 @@ project_root = Path(__file__).parent.parent
 gen_proto_path = project_root / "gen" / "proto"
 sys.path.insert(0, str(gen_proto_path))
 
-import v1.cinematography_pb2 as cinematography_pb2
 import v1.ptz_service_pb2 as ptz_service_pb2
 from ptz import execute_ptz_task, handle_ptz_stream
 
