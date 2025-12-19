@@ -1,9 +1,9 @@
 .PHONY: register-camera test
 
 register-camera:
-	@if [ -z "$(NAME)" ] || [ -z "$(MASTER_MF_ID)" ] || [ -z "$(ADDRESS)" ]; then \
-		echo "エラー: NAME, MASTER_MF_ID, ADDRESS は必須です"; \
-		echo "使用例: make register-camera NAME=\"カメラ1\" MASTER_MF_ID=\"mf-001\" ADDRESS=\"192.168.1.100\""; \
+	@if [ -z "$(NAME)" ] || [ -z "$(MASTER_MF_ID)" ]; then \
+		echo "エラー: NAME, MASTER_MF_ID は必須です（ADDRESSは省略時にローカルIP）"; \
+		echo "使用例: make register-camera NAME=\"カメラ1\" MASTER_MF_ID=\"mf-001\""; \
 		exit 1; \
 	fi
 	cd film-director && uv run python main.py \

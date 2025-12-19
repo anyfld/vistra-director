@@ -5,6 +5,7 @@
 import argparse
 import asyncio
 import logging
+import socket
 import sys
 from pathlib import Path
 from collections.abc import AsyncIterator
@@ -27,6 +28,17 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
 logger = logging.getLogger(__name__)
+
+
+def get_default_address() -> str:
+    """ローカルIPアドレスを取得（失敗時は127.0.0.1）"""
+    try:
+        # 外部宛のダミー接続を使って、自分側のIPアドレスを取得
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -79,8 +91,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--address",
         type=str,
-        required=True,
-        help="カメラのアドレス（IPアドレスまたはURL）",
+        default=get_default_address(),
+        help="カメラのアドレス（IPアドレスまたはURL, default: ローカルIP）",
     )
     parser.add_argument(
         "--port",
@@ -128,7 +140,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fd-service-url",
         type=str,
-        help="FDServiceのURL（PTZ制御ストリームを使用する場合）",
+        default="http://localhost:8080",
+        help="FDServiceのURL（PTZ制御ストリームを使用する場合, default: http://localhost:8080）",
     )
     return parser.parse_args()
 
