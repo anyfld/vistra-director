@@ -92,6 +92,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra test
       - name: Run tests
         run: uv run pytest
