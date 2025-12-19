@@ -37,10 +37,7 @@ class FDService(Protocol):
     async def calculate_framing(self, request: v1_dot_fd__service__pb2.CalculateFramingRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.CalculateFramingResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def send_control_command(self, request: v1_dot_fd__service__pb2.SendControlCommandRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def stream_control_commands(self, request: AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest], ctx: RequestContext) -> AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
+    async def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -119,17 +116,7 @@ class FDServiceASGIApplication(ConnectASGIApplication[FDService]):
                     ),
                     function=svc.calculate_framing,
                 ),
-                "/v1.FDService/SendControlCommand": Endpoint.unary(
-                    method=MethodInfo(
-                        name="SendControlCommand",
-                        service_name="v1.FDService",
-                        input=v1_dot_fd__service__pb2.SendControlCommandRequest,
-                        output=v1_dot_fd__service__pb2.SendControlCommandResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=svc.send_control_command,
-                ),
-                "/v1.FDService/StreamControlCommands": Endpoint.bidi_stream(
+                "/v1.FDService/StreamControlCommands": Endpoint.unary(
                     method=MethodInfo(
                         name="StreamControlCommands",
                         service_name="v1.FDService",
@@ -291,34 +278,14 @@ class FDServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    async def send_control_command(
+    async def stream_control_commands(
         self,
-        request: v1_dot_fd__service__pb2.SendControlCommandRequest,
+        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
-    ) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
+    ) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
         return await self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="SendControlCommand",
-                service_name="v1.FDService",
-                input=v1_dot_fd__service__pb2.SendControlCommandRequest,
-                output=v1_dot_fd__service__pb2.SendControlCommandResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
-    def stream_control_commands(
-        self,
-        request: AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest],
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> AsyncIterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
-        return self.execute_bidi_stream(
             request=request,
             method=MethodInfo(
                 name="StreamControlCommands",
@@ -347,9 +314,7 @@ class FDServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def calculate_framing(self, request: v1_dot_fd__service__pb2.CalculateFramingRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.CalculateFramingResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def send_control_command(self, request: v1_dot_fd__service__pb2.SendControlCommandRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_control_commands(self, request: Iterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest], ctx: RequestContext) -> Iterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
+    def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -427,17 +392,7 @@ class FDServiceWSGIApplication(ConnectWSGIApplication):
                     ),
                     function=service.calculate_framing,
                 ),
-                "/v1.FDService/SendControlCommand": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="SendControlCommand",
-                        service_name="v1.FDService",
-                        input=v1_dot_fd__service__pb2.SendControlCommandRequest,
-                        output=v1_dot_fd__service__pb2.SendControlCommandResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=service.send_control_command,
-                ),
-                "/v1.FDService/StreamControlCommands": EndpointSync.bidi_stream(
+                "/v1.FDService/StreamControlCommands": EndpointSync.unary(
                     method=MethodInfo(
                         name="StreamControlCommands",
                         service_name="v1.FDService",
@@ -599,34 +554,14 @@ class FDServiceClientSync(ConnectClientSync):
             timeout_ms=timeout_ms,
         )
 
-    def send_control_command(
-        self,
-        request: v1_dot_fd__service__pb2.SendControlCommandRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_fd__service__pb2.SendControlCommandResponse:
-        return self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="SendControlCommand",
-                service_name="v1.FDService",
-                input=v1_dot_fd__service__pb2.SendControlCommandRequest,
-                output=v1_dot_fd__service__pb2.SendControlCommandResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
     def stream_control_commands(
         self,
-        request: Iterator[v1_dot_fd__service__pb2.StreamControlCommandsRequest],
+        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
-    ) -> Iterator[v1_dot_fd__service__pb2.StreamControlCommandsResponse]:
-        return self.execute_bidi_stream(
+    ) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
+        return self.execute_unary(
             request=request,
             method=MethodInfo(
                 name="StreamControlCommands",
