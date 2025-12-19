@@ -44,7 +44,7 @@ find-projects:
 type-check:
 	@for project in $$(find . -mindepth 1 -type f -name pyproject.toml -exec dirname {} \;); do \
 		echo "Running type check in $$project"; \
-		(cd "$$project" && uv sync --dev && uvx ty check) || exit 1; \
+		(cd "$$project" && uv sync --dev && uvx --python $$(uv run which python) ty check) || exit 1; \
 	done
 
 test-film-director:
