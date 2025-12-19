@@ -78,6 +78,28 @@ async def handle_ptz_stream(
                     break
                 yield request
 
+        async def heartbeat_task():
+            """5秒ごとにstate信号を送信するハートビートタスク"""
+            try:
+                while True:
+                    await asyncio.sleep(5)
+                    try:
+                        state_request = fd_service_pb2.StreamControlCommandsRequest()
+                        camera_state = fd_service_pb2.CameraState()
+                        camera_state.camera_id = camera_id
+                        state_request.state.CopyFrom(camera_state)
+                        await request_queue.put(state_request)
+                        if verbose:
+                            logger.debug(f"ハートビート送信: camera_id={camera_id}")
+                    except AttributeError:
+                        logger.warning("StreamControlCommandsRequestにstateフィールドが存在しません。ハートビートをスキップします。")
+                    except Exception as e:
+                        logger.error(f"ハートビート送信エラー: {e}", exc_info=verbose)
+            except asyncio.CancelledError:
+                logger.debug("ハートビートタスクがキャンセルされました")
+            except Exception as e:
+                logger.error(f"ハートビートタスクエラー: {e}", exc_info=verbose)
+
         async def process_responses():
             try:
                 async for response in fd_client.stream_control_commands(request_iterator()):
@@ -122,7 +144,15 @@ async def handle_ptz_stream(
             finally:
                 await request_queue.put(None)
 
-        await process_responses()
+        heartbeat = asyncio.create_task(heartbeat_task())
+        try:
+            await process_responses()
+        finally:
+            heartbeat.cancel()
+            try:
+                await heartbeat
+            except asyncio.CancelledError:
+                pass
 
     except ConnectError as e:
         logger.error(f"PTZストリーム接続エラー: {e}", exc_info=verbose)
