@@ -1,0 +1,17 @@
+[project]
+name = "vistra-camera-operator"
+version = "0.1.0"
+description = "Dual Servo Controller for Arduino"
+readme = "../README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.scripts]
+servo-controller = "interactive:main"
+servo-demo = "sample:main"
+
+[tool.ty.rules]
+unresolved-import = "ignore"
+

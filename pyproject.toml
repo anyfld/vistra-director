@@ -1,0 +1,17 @@
+[tool.ruff]
+exclude = [
+    "gen/",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+]
+
+[tool.ruff.lint]
+ignore = [
+    "E402",  # Module level import not at top of file (needed for sys.path.insert)
+    "F401",  # Imported but unused (for generated files and __init__.py re-exports)
+]
+
+[tool.ty.src]
+exclude = ["film-director/", "gen/", "poc/"]

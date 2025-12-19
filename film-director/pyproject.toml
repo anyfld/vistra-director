@@ -1,0 +1,32 @@
+[project]
+name = "film-director"
+version = "0.1.0"
+description = "カメラ登録処理"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "connect-python>=0.6.0",
+    "protobuf>=6.0.0",
+    "httpx[http2]>=0.25.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+]
+
+[project.scripts]
+film-director = "main:main"
+
+[tool.ty.environment]
+extra-paths = ["../gen/proto"]
+
+[tool.ty.src]
+exclude = ["test_*.py"]
+
+[tool.ty.rules]
+unresolved-attribute = "ignore"
+unresolved-import = "ignore"
