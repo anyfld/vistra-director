@@ -5,9 +5,7 @@
 import argparse
 import asyncio
 import logging
-import signal
 import sys
-import time
 from pathlib import Path
 from collections.abc import AsyncIterator
 
@@ -128,11 +126,6 @@ def parse_args() -> argparse.Namespace:
         help="詳細ログを出力",
     )
     parser.add_argument(
-        "--no-heartbeat",
-        action="store_true",
-        help="ハートビートを送信しない",
-    )
-    parser.add_argument(
         "--fd-service-url",
         type=str,
         help="FDServiceのURL（PTZ制御ストリームを使用する場合）",
@@ -251,47 +244,17 @@ async def register_camera(args: argparse.Namespace) -> None:
 
         camera_id = await do_register_camera(client, request, args.verbose)
 
-        # PTZ制御ストリーム処理とハートビート送信を並行実行
-        tasks = []
-        
         # PTZ制御ストリーム処理（PTZサポートがある場合）
         if args.supports_ptz and args.fd_service_url:
             logger.info("PTZ制御ストリーム処理を開始します")
-            tasks.append(
-                asyncio.create_task(
-                    handle_ptz_stream(
-                        args.fd_service_url,
-                        camera_id,
-                        args.insecure,
-                        args.verbose,
-                    )
-                )
+            await handle_ptz_stream(
+                args.fd_service_url,
+                camera_id,
+                args.insecure,
+                args.verbose,
             )
         elif args.supports_ptz and not args.fd_service_url:
             logger.warning("PTZサポートが有効ですが、--fd-service-urlが指定されていません。PTZ制御ストリームは開始されません。")
-
-        # ハートビート送信
-        if not args.no_heartbeat:
-            heartbeat_interval = 5.0
-            logger.info(f"ハートビート送信を開始します（間隔: {heartbeat_interval}秒）")
-            tasks.append(
-                asyncio.create_task(
-                    send_heartbeats(
-                        client,
-                        camera_id,
-                        heartbeat_interval,
-                        args.verbose,
-                        args,
-                        request,
-                    )
-                )
-            )
-        else:
-            logger.info("ハートビート送信をスキップします")
-
-        # すべてのタスクが完了するまで待機
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
 
     except KeyboardInterrupt:
         logger.info("処理が中断されました")
@@ -466,84 +429,6 @@ async def execute_ptz_command(
         result.error_message = str(e)
 
     return result
-
-
-async def send_heartbeats(
-    client: cd_service_connect.CameraServiceClient,
-    camera_id: str,
-    interval: float,
-    verbose: bool,
-    args: argparse.Namespace,
-    register_request: cd_service_pb2.RegisterCameraRequest,
-) -> None:
-    """ハートビートを定期的に送信"""
-    stop_event = asyncio.Event()
-    current_camera_id = camera_id
-
-    def signal_handler(signum: int, frame: object) -> None:
-        logger.info("シグナルを受信しました。ハートビート送信を停止します...")
-        stop_event.set()
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    try:
-        while not stop_event.is_set():
-            try:
-                timestamp_ms = int(time.time() * 1000)
-
-                heartbeat_request = cd_service_pb2.HeartbeatRequest()
-                heartbeat_request.camera_id = current_camera_id
-                heartbeat_request.timestamp_ms = timestamp_ms
-
-                # PTZパラメータは現在のところ空（必要に応じて設定可能）
-                # heartbeat_request.current_ptz.CopyFrom(...)
-
-                # ステータスは現在のところ未指定（必要に応じて設定可能）
-                # heartbeat_request.status = cr_service_pb2.CameraStatus.CAMERA_STATUS_ONLINE
-
-                response = await client.heartbeat(heartbeat_request)
-
-                if response.acknowledged:
-                    logger.debug(
-                        f"ハートビート送信成功: camera_id={current_camera_id}, "
-                        f"server_timestamp_ms={response.server_timestamp_ms}"
-                    )
-                else:
-                    logger.warning(
-                        f"ハートビートが認識されませんでした: camera_id={current_camera_id}"
-                    )
-
-            except ConnectError as e:
-                if e.code == Code.NOT_FOUND:
-                    logger.warning(
-                        f"カメラが見つかりませんでした（camera_id={current_camera_id}）。再登録を試みます..."
-                    )
-                    try:
-                        new_camera_id = await do_register_camera(
-                            client, register_request, verbose
-                        )
-                        current_camera_id = new_camera_id
-                        logger.info(f"カメラ再登録が完了しました: camera_id={new_camera_id}")
-                    except Exception as reg_error:
-                        logger.error(
-                            f"カメラ再登録に失敗しました: {reg_error}", exc_info=verbose
-                        )
-                else:
-                    logger.error(f"ハートビート送信エラー: {e}", exc_info=verbose)
-            except Exception as e:
-                logger.error(f"ハートビート送信エラー: {e}", exc_info=verbose)
-
-            # 次の送信まで待機
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                pass
-
-    except KeyboardInterrupt:
-        logger.info("ハートビート送信が中断されました")
-    finally:
-        logger.info("ハートビート送信を終了します")
 
 
 def main() -> None:

@@ -21,8 +21,7 @@ register-camera:
 		$(if $(FD_SERVICE_URL),--fd-service-url $(FD_SERVICE_URL),) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
-		$(if $(VERBOSE),--verbose,) \
-		$(if $(NO_HEARTBEAT),--no-heartbeat,)
+		$(if $(VERBOSE),--verbose,)
 
 test:
 	cd film-director && uv run --extra test pytest -v
