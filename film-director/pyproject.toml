@@ -1,0 +1,13 @@
+[project]
+name = "film-director"
+version = "0.1.0"
+description = "カメラ登録処理"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "connect-python[protobuf]>=0.6.0",
+    "httpx>=0.25.0",
+]
+
+[project.scripts]
+film-director = "main:main"
