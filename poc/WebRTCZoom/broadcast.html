@@ -555,12 +555,18 @@
                     const cmd = JSON.parse(e.data);
                     console.log('Remote zoom command (SSE):', cmd);
                     
+                    // 倍率を取得（デフォルト0.5）
+                    const value = parseFloat(cmd.value) || 0.5;
+                    
                     if (cmd.cmd === 'zoom_in') {
-                        setZoom(currentZoom + 0.5);
-                        showRemoteCommand('🔍 リモートズームイン');
+                        setZoom(currentZoom + value);
+                        showRemoteCommand(`🔍 ズームイン +${value}x`);
                     } else if (cmd.cmd === 'zoom_out') {
-                        setZoom(currentZoom - 0.5);
-                        showRemoteCommand('🔍 リモートズームアウト');
+                        setZoom(currentZoom - value);
+                        showRemoteCommand(`🔍 ズームアウト -${value}x`);
+                    } else if (cmd.cmd === 'set_zoom') {
+                        setZoom(value);
+                        showRemoteCommand(`🔍 ズーム ${value}x`);
                     }
                 } catch (err) {
                     console.error('SSE parse error:', err);
@@ -589,12 +595,18 @@
                         const data = await res.json();
                         if (data.commands && data.commands.length > 0) {
                             for (const cmd of data.commands) {
+                                // 倍率を取得（デフォルト0.5）
+                                const value = parseFloat(cmd.value) || 0.5;
+                                
                                 if (cmd.cmd === 'zoom_in') {
-                                    setZoom(currentZoom + 0.5);
-                                    showRemoteCommand('🔍 リモートズームイン');
+                                    setZoom(currentZoom + value);
+                                    showRemoteCommand(`🔍 ズームイン +${value}x`);
                                 } else if (cmd.cmd === 'zoom_out') {
-                                    setZoom(currentZoom - 0.5);
-                                    showRemoteCommand('🔍 リモートズームアウト');
+                                    setZoom(currentZoom - value);
+                                    showRemoteCommand(`🔍 ズームアウト -${value}x`);
+                                } else if (cmd.cmd === 'set_zoom') {
+                                    setZoom(value);
+                                    showRemoteCommand(`🔍 ズーム ${value}x`);
                                 }
                             }
                         }

@@ -97,6 +97,94 @@ uv run python WebRTCZoom/main.py --help
 | `--http` | HTTPモード（ローカル開発用） | - |
 | `--no-browser` | ブラウザを自動で開かない | - |
 
+## Pythonからのズーム制御
+
+`zoom_control.py` を使って、Pythonコマンドからズームイン/アウトを操作できます。
+
+### 基本的な使い方
+
+```bash
+# ズームイン（デフォルト0.5倍ずつ）
+uv run python WebRTCZoom/zoom_control.py zoom_in
+
+# ズームアウト
+uv run python WebRTCZoom/zoom_control.py zoom_out
+
+# 短縮コマンド
+uv run python WebRTCZoom/zoom_control.py in   # ズームイン
+uv run python WebRTCZoom/zoom_control.py out  # ズームアウト
+uv run python WebRTCZoom/zoom_control.py +    # ズームイン
+uv run python WebRTCZoom/zoom_control.py -    # ズームアウト
+```
+
+### 倍率を指定
+
+```bash
+# 1.0倍ずつズームイン
+uv run python WebRTCZoom/zoom_control.py zoom_in --value 1.0
+
+# 2.0倍ずつズームアウト
+uv run python WebRTCZoom/zoom_control.py zoom_out --value 2.0
+
+# 絶対値でズームを設定（3.0倍に設定）
+uv run python WebRTCZoom/zoom_control.py set --value 3.0
+
+# 最小ズーム（1.0倍）に戻す
+uv run python WebRTCZoom/zoom_control.py set --value 1.0
+```
+
+### オプション
+
+| オプション | 説明 | デフォルト |
+|-----------|------|----------|
+| `--value`, `-v` | ズーム倍率（増減値または絶対値） | 0.5 |
+| `--stream`, `-s` | ストリーム名 | camera |
+| `--server`, `-u` | サーバーURL | https://localhost:8443 |
+| `--repeat`, `-r` | 繰り返し回数 | 1 |
+| `--quiet`, `-q` | 出力を抑制 | - |
+| `--no-insecure` | SSL証明書を検証 | - |
+
+### 使用例
+
+```bash
+# ストリーム名を指定
+uv run python WebRTCZoom/zoom_control.py zoom_in --stream my_camera
+
+# リモートサーバーに接続
+uv run python WebRTCZoom/zoom_control.py zoom_in --server https://192.168.1.100:8443
+
+# 3回連続ズームイン（0.5 × 3 = 1.5倍増加）
+uv run python WebRTCZoom/zoom_control.py zoom_in --repeat 3
+
+# 1.0倍ずつ3回連続ズームイン（1.0 × 3 = 3.0倍増加）
+uv run python WebRTCZoom/zoom_control.py zoom_in --value 1.0 --repeat 3
+
+# 静かに実行
+uv run python WebRTCZoom/zoom_control.py zoom_in -q
+```
+
+### Pythonコードからの利用
+
+```python
+from WebRTCZoom.zoom_control import zoom_in, zoom_out, set_zoom
+
+# ズームイン（デフォルト0.5倍）
+zoom_in()
+
+# 1.0倍ずつズームイン
+zoom_in(value=1.0)
+
+# ズームアウト
+zoom_out()
+
+# 絶対値でズームを設定
+set_zoom(3.0)  # 3.0倍に設定
+set_zoom(1.0)  # 1.0倍に戻す
+
+# オプション指定
+zoom_in(stream="my_camera", server_url="https://192.168.1.100:8443", value=1.5)
+```
+
 ## ⚠️ 注意事項
 
 ### カメラズームのサポート
