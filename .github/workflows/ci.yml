@@ -59,7 +59,7 @@ jobs:
       - name: Find Projects
         id: find-projects
         run: |
-          projects="$(find . -type f -name pyproject.toml -exec dirname {} \; | jq -Rsc 'split("\n")[:-1]')"
+          projects="$(find . -type f -name pyproject.toml -not -path './poc/*' -exec dirname {} \; | jq -Rsc 'split("\n")[:-1]')"
           echo "projects=$projects" >>"$GITHUB_OUTPUT"
 
   type-check:
