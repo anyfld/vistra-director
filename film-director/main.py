@@ -117,7 +117,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--supports-ptz",
         action="store_true",
-        help="PTZサポート",
+        default=True,
+        help="PTZサポート (default: 有効)",
+    )
+    parser.add_argument(
+        "--no-ptz",
+        dest="supports_ptz",
+        action="store_false",
+        help="PTZサポートを無効化",
     )
     parser.add_argument(
         "--metadata",
