@@ -12,3 +12,6 @@ dependencies = [
 servo-controller = "interactive:main"
 servo-demo = "sample:main"
 
+[tool.ty.rules]
+unresolved-import = "ignore"
+
