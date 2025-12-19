@@ -18,6 +18,7 @@ jobs:
       - format-check
       - find-projects
       - type-check
+      - test-film-director
     steps:
       - uses: actions/checkout@v5
       - name: Check all-status-check
@@ -79,3 +80,18 @@ jobs:
         run: uv sync --dev
       - name: Run Type Checker
         run: uvx ty check
+
+  test-film-director:
+    name: Test film-director
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: film-director
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run tests
+        run: uv run pytest
