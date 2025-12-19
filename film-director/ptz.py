@@ -101,6 +101,9 @@ async def handle_ptz_stream(
 
                 response = await fd_client.stream_control_commands(request)
 
+                if verbose:
+                    logger.debug("PTZ制御レスポンス(raw): %s", response)
+
                 if response.HasField("command"):
                     command = response.command
                     logger.info(
