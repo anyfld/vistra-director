@@ -52,7 +52,7 @@ class MDService(Protocol):
     async def send_to_l_l_m(self, request: v1_dot_md__service__pb2.SendToLLMRequest, ctx: RequestContext) -> v1_dot_md__service__pb2.SendToLLMResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def receive_from_l_l_m(self, request: v1_dot_md__service__pb2.ReceiveFromLLMRequest, ctx: RequestContext) -> AsyncIterator[v1_dot_md__service__pb2.ReceiveFromLLMResponse]:
+    async def receive_from_l_l_m(self, request: v1_dot_md__service__pb2.ReceiveFromLLMRequest, ctx: RequestContext) -> v1_dot_md__service__pb2.ReceiveFromLLMResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -181,7 +181,7 @@ class MDServiceASGIApplication(ConnectASGIApplication[MDService]):
                     ),
                     function=svc.send_to_l_l_m,
                 ),
-                "/v1.MDService/ReceiveFromLLM": Endpoint.server_stream(
+                "/v1.MDService/ReceiveFromLLM": Endpoint.unary(
                     method=MethodInfo(
                         name="ReceiveFromLLM",
                         service_name="v1.MDService",
@@ -443,14 +443,14 @@ class MDServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    def receive_from_l_l_m(
+    async def receive_from_l_l_m(
         self,
         request: v1_dot_md__service__pb2.ReceiveFromLLMRequest,
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
-    ) -> AsyncIterator[v1_dot_md__service__pb2.ReceiveFromLLMResponse]:
-        return self.execute_server_stream(
+    ) -> v1_dot_md__service__pb2.ReceiveFromLLMResponse:
+        return await self.execute_unary(
             request=request,
             method=MethodInfo(
                 name="ReceiveFromLLM",
@@ -489,7 +489,7 @@ class MDServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def send_to_l_l_m(self, request: v1_dot_md__service__pb2.SendToLLMRequest, ctx: RequestContext) -> v1_dot_md__service__pb2.SendToLLMResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def receive_from_l_l_m(self, request: v1_dot_md__service__pb2.ReceiveFromLLMRequest, ctx: RequestContext) -> Iterator[v1_dot_md__service__pb2.ReceiveFromLLMResponse]:
+    def receive_from_l_l_m(self, request: v1_dot_md__service__pb2.ReceiveFromLLMRequest, ctx: RequestContext) -> v1_dot_md__service__pb2.ReceiveFromLLMResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -617,7 +617,7 @@ class MDServiceWSGIApplication(ConnectWSGIApplication):
                     ),
                     function=service.send_to_l_l_m,
                 ),
-                "/v1.MDService/ReceiveFromLLM": EndpointSync.server_stream(
+                "/v1.MDService/ReceiveFromLLM": EndpointSync.unary(
                     method=MethodInfo(
                         name="ReceiveFromLLM",
                         service_name="v1.MDService",
@@ -885,8 +885,8 @@ class MDServiceClientSync(ConnectClientSync):
         *,
         headers: Headers | Mapping[str, str] | None = None,
         timeout_ms: int | None = None,
-    ) -> Iterator[v1_dot_md__service__pb2.ReceiveFromLLMResponse]:
-        return self.execute_server_stream(
+    ) -> v1_dot_md__service__pb2.ReceiveFromLLMResponse:
+        return self.execute_unary(
             request=request,
             method=MethodInfo(
                 name="ReceiveFromLLM",
