@@ -18,6 +18,7 @@ register-camera:
 		$(if $(PASSWORD),--password $(PASSWORD),) \
 		$(if $(TOKEN),--token $(TOKEN),) \
 		$(if $(SUPPORTS_PTZ),--supports-ptz,) \
+		$(if $(FD_SERVICE_URL),--fd-service-url $(FD_SERVICE_URL),) \
 		$(if $(METADATA),--metadata $(METADATA),) \
 		$(if $(INSECURE),--insecure,) \
 		$(if $(VERBOSE),--verbose,) \

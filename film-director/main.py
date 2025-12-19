@@ -9,6 +9,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -22,6 +23,8 @@ import v1.cd_service_connect as cd_service_connect
 import v1.cd_service_pb2 as cd_service_pb2
 import v1.cinematography_pb2 as cinematography_pb2
 import v1.cr_service_pb2 as cr_service_pb2
+import v1.fd_service_connect as fd_service_connect
+import v1.fd_service_pb2 as fd_service_pb2
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
@@ -128,6 +131,11 @@ def parse_args() -> argparse.Namespace:
         "--no-heartbeat",
         action="store_true",
         help="ハートビートを送信しない",
+    )
+    parser.add_argument(
+        "--fd-service-url",
+        type=str,
+        help="FDServiceのURL（PTZ制御ストリームを使用する場合）",
     )
     return parser.parse_args()
 
@@ -243,20 +251,47 @@ async def register_camera(args: argparse.Namespace) -> None:
 
         camera_id = await do_register_camera(client, request, args.verbose)
 
+        # PTZ制御ストリーム処理とハートビート送信を並行実行
+        tasks = []
+        
+        # PTZ制御ストリーム処理（PTZサポートがある場合）
+        if args.supports_ptz and args.fd_service_url:
+            logger.info("PTZ制御ストリーム処理を開始します")
+            tasks.append(
+                asyncio.create_task(
+                    handle_ptz_stream(
+                        args.fd_service_url,
+                        camera_id,
+                        args.insecure,
+                        args.verbose,
+                    )
+                )
+            )
+        elif args.supports_ptz and not args.fd_service_url:
+            logger.warning("PTZサポートが有効ですが、--fd-service-urlが指定されていません。PTZ制御ストリームは開始されません。")
+
         # ハートビート送信
         if not args.no_heartbeat:
             heartbeat_interval = 5.0
             logger.info(f"ハートビート送信を開始します（間隔: {heartbeat_interval}秒）")
-            await send_heartbeats(
-                client,
-                camera_id,
-                heartbeat_interval,
-                args.verbose,
-                args,
-                request,
+            tasks.append(
+                asyncio.create_task(
+                    send_heartbeats(
+                        client,
+                        camera_id,
+                        heartbeat_interval,
+                        args.verbose,
+                        args,
+                        request,
+                    )
+                )
             )
         else:
             logger.info("ハートビート送信をスキップします")
+
+        # すべてのタスクが完了するまで待機
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     except KeyboardInterrupt:
         logger.info("処理が中断されました")
@@ -294,6 +329,143 @@ async def unregister_camera(
 
     except Exception as e:
         logger.error(f"カメラ削除エラー: {e}", exc_info=verbose)
+
+
+async def handle_ptz_stream(
+    fd_service_url: str,
+    camera_id: str,
+    insecure: bool,
+    verbose: bool,
+) -> None:
+    """PTZ制御ストリームを処理"""
+    http_client: httpx.AsyncClient | None = None
+    fd_client: fd_service_connect.FDServiceClient | None = None
+
+    try:
+        verify = not insecure
+        http_client = httpx.AsyncClient(verify=verify)
+        fd_client = fd_service_connect.FDServiceClient(
+            fd_service_url,
+            session=http_client,
+        )
+
+        logger.info(f"PTZ制御ストリームに接続: camera_id={camera_id}")
+
+        # リクエスト送信用のキュー
+        request_queue: asyncio.Queue[
+            fd_service_pb2.StreamControlCommandsRequest | None
+        ] = asyncio.Queue()
+
+        async def request_iterator() -> AsyncIterator[fd_service_pb2.StreamControlCommandsRequest]:
+            """ストリームリクエストイテレータ"""
+            # 初期化メッセージを送信
+            init_request = fd_service_pb2.StreamControlCommandsRequest()
+            init_request.init.camera_id = camera_id
+            yield init_request
+
+            # キューからリクエストを送信
+            while True:
+                request = await request_queue.get()
+                if request is None:
+                    break
+                yield request
+
+        # ストリーム処理タスク
+        async def process_responses():
+            """レスポンスを処理し、必要に応じてリクエストをキューに追加"""
+            try:
+                async for response in fd_client.stream_control_commands(request_iterator()):
+                    try:
+                        # サーバーからコマンドを受信
+                        if response.HasField("command"):
+                            command = response.command
+                            logger.info(
+                                f"PTZ制御コマンドを受信: command_id={command.command_id}, "
+                                f"type={command.type}, camera_id={command.camera_id}"
+                            )
+
+                            # PTZパラメータが設定されている場合
+                            if command.HasField("ptz_parameters"):
+                                ptz = command.ptz_parameters
+                                logger.info(
+                                    f"PTZパラメータ: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}, "
+                                    f"pan_speed={ptz.pan_speed}, tilt_speed={ptz.tilt_speed}, "
+                                    f"zoom_speed={ptz.zoom_speed}"
+                                )
+
+                            # 実際のカメラにPTZコマンドを適用
+                            result = await execute_ptz_command(command, verbose)
+
+                            # 結果をストリームに送信
+                            result_request = fd_service_pb2.StreamControlCommandsRequest()
+                            result_request.result.CopyFrom(result)
+                            await request_queue.put(result_request)
+
+                            logger.info(
+                                f"PTZコマンド実行完了: command_id={command.command_id}, "
+                                f"success={result.success}"
+                            )
+
+                        # ステータスメッセージを受信
+                        elif response.HasField("status"):
+                            status = response.status
+                            logger.info(
+                                f"ストリームステータス: connected={status.connected}, "
+                                f"message={status.message}"
+                            )
+
+                    except Exception as e:
+                        logger.error(f"PTZストリーム処理エラー: {e}", exc_info=verbose)
+            except Exception as e:
+                logger.error(f"PTZストリーム受信エラー: {e}", exc_info=verbose)
+            finally:
+                # ストリーム終了を通知
+                await request_queue.put(None)
+
+        # ストリーム処理を開始
+        await process_responses()
+
+    except ConnectError as e:
+        logger.error(f"PTZストリーム接続エラー: {e}", exc_info=verbose)
+    except Exception as e:
+        logger.error(f"PTZストリーム処理エラー: {e}", exc_info=verbose)
+    finally:
+        if http_client:
+            await http_client.aclose()
+        logger.info("PTZ制御ストリーム処理を終了します")
+
+
+async def execute_ptz_command(
+    command: fd_service_pb2.ControlCommand,
+    verbose: bool,
+) -> fd_service_pb2.ControlCommandResult:
+    """PTZコマンドを実行"""
+    result = fd_service_pb2.ControlCommandResult()
+    result.command_id = command.command_id
+    result.success = True
+
+    try:
+        # TODO: 実際のカメラ制御APIを呼び出す
+        # 現在はログ出力のみ
+        command_type_name = fd_service_pb2.ControlCommandType.Name(command.type)
+        logger.info(f"PTZコマンド実行: type={command_type_name}")
+
+        if command.HasField("ptz_parameters"):
+            ptz = command.ptz_parameters
+            logger.info(
+                f"PTZパラメータ適用: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
+            )
+            # 実際のPTZパラメータを設定
+            result.resulting_ptz.CopyFrom(ptz)
+
+        result.execution_time_ms = 100  # 仮の実行時間
+
+    except Exception as e:
+        logger.error(f"PTZコマンド実行エラー: {e}", exc_info=verbose)
+        result.success = False
+        result.error_message = str(e)
+
+    return result
 
 
 async def send_heartbeats(
