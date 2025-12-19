@@ -274,4 +274,3 @@ async def execute_ptz_command(
         result.error_message = str(e)
 
     return result
-

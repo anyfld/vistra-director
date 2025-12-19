@@ -167,4 +167,3 @@ async def register_camera(args: argparse.Namespace) -> None:
                 logger.error(f"カメラ削除エラー: {e}", exc_info=args.verbose)
         if http_client:
             await http_client.aclose()
-
