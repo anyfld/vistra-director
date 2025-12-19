@@ -135,6 +135,11 @@ def parse_args() -> argparse.Namespace:
         default="http://localhost:8080",
         help="FDServiceのURL（PTZ制御ストリームを使用する場合, default: http://localhost:8080）",
     )
+    parser.add_argument(
+        "--virtual-ptz",
+        action="store_true",
+        help="仮想PTZモードを使用（ハードウェア制御を行わず、ログ出力のみ）",
+    )
     return parser.parse_args()
 
 

@@ -90,6 +90,7 @@ async def _poll_ptz_commands(
     fd_client: fd_service_connect.FDServiceClient,
     camera_id: str,
     verbose: bool,
+    virtual_ptz: bool = False,
 ) -> None:
     logger.info("PTZ制御コマンド購読ループを開始します: camera_id=%s", camera_id)
     while True:
@@ -132,7 +133,7 @@ async def _poll_ptz_commands(
                         ptz.tilt_speed,
                         ptz.zoom_speed,
                     )
-                result = await execute_ptz_command(command, verbose)
+                result = await execute_ptz_command(command, verbose, virtual_ptz)
                 logger.info(
                     "PTZコマンド実行完了: command_id=%s, success=%s",
                     result.command_id,
@@ -207,6 +208,7 @@ async def handle_ptz_stream(
     camera_id: str,
     insecure: bool,
     verbose: bool,
+    virtual_ptz: bool = False,
 ) -> None:
     http_client: httpx.AsyncClient | None = None
     fd_client: fd_service_connect.FDServiceClient | None = None
@@ -219,9 +221,10 @@ async def handle_ptz_stream(
         )
         if fd_client is None:
             raise RuntimeError("FDServiceClient is not initialized")
-        logger.info("PTZ制御ストリーム処理を開始します: camera_id=%s", camera_id)
+        mode_str = "仮想PTZモード" if virtual_ptz else "実機PTZモード"
+        logger.info("PTZ制御ストリーム処理を開始します: camera_id=%s, mode=%s", camera_id, mode_str)
         await asyncio.gather(
-            _poll_ptz_commands(fd_client, camera_id, verbose),
+            _poll_ptz_commands(fd_client, camera_id, verbose, virtual_ptz),
             _send_camera_state_loop(fd_client, camera_id, verbose),
         )
     except Exception as e:
@@ -235,6 +238,7 @@ async def handle_ptz_stream(
 async def execute_ptz_command(
     command: fd_service_pb2.ControlCommand,
     verbose: bool,
+    virtual_ptz: bool = False,
 ) -> fd_service_pb2.ControlCommandResult:
     result = fd_service_pb2.ControlCommandResult()
     result.command_id = command.command_id
@@ -251,17 +255,23 @@ async def execute_ptz_command(
                 f"PTZパラメータ適用: pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
             )
 
-            controller = get_servo_controller()
-            if controller is not None:
-                try:
-                    pan_angle = max(0, min(180, int(ptz.pan)))
-                    tilt_angle = max(0, min(180, int(ptz.tilt)))
-                    controller.move_both(pan_angle, tilt_angle)
-                    logger.info(
-                        f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}"
-                    )
-                except Exception as e:
-                    logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
+            if virtual_ptz:
+                logger.info(
+                    "[仮想PTZ] ハードウェア制御をスキップ: "
+                    f"pan={ptz.pan}, tilt={ptz.tilt}, zoom={ptz.zoom}"
+                )
+            else:
+                controller = get_servo_controller()
+                if controller is not None:
+                    try:
+                        pan_angle = max(0, min(180, int(ptz.pan)))
+                        tilt_angle = max(0, min(180, int(ptz.tilt)))
+                        controller.move_both(pan_angle, tilt_angle)
+                        logger.info(
+                            f"PTZサーボ制御: pan={pan_angle}, tilt={tilt_angle}"
+                        )
+                    except Exception as e:
+                        logger.error(f"PTZサーボ制御エラー: {e}", exc_info=verbose)
 
             result.resulting_ptz.CopyFrom(ptz)
             _last_ptz = ptz

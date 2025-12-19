@@ -149,6 +149,7 @@ async def register_camera(args: argparse.Namespace) -> None:
                 camera_id,
                 args.insecure,
                 args.verbose,
+                getattr(args, "virtual_ptz", False),
             )
         elif args.supports_ptz and not args.fd_service_url:
             logger.warning(
