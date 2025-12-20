@@ -68,6 +68,60 @@ class ExampleServiceClient(ConnectClient):
         )
 
 
+
+class ConfigService(Protocol):
+    async def get_global_config(self, request: v1_dot_service__pb2.GetGlobalConfigRequest, ctx: RequestContext) -> v1_dot_service__pb2.GetGlobalConfigResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+
+class ConfigServiceASGIApplication(ConnectASGIApplication[ConfigService]):
+    def __init__(self, service: ConfigService | AsyncGenerator[ConfigService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+        super().__init__(
+            service=service,
+            endpoints=lambda svc: {
+                "/v1.ConfigService/GetGlobalConfig": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetGlobalConfig",
+                        service_name="v1.ConfigService",
+                        input=v1_dot_service__pb2.GetGlobalConfigRequest,
+                        output=v1_dot_service__pb2.GetGlobalConfigResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_global_config,
+                ),
+            },
+            interceptors=interceptors,
+            read_max_bytes=read_max_bytes,
+        )
+
+    @property
+    def path(self) -> str:
+        """Returns the URL path to mount the application to when serving multiple applications."""
+        return "/v1.ConfigService"
+
+
+class ConfigServiceClient(ConnectClient):
+    async def get_global_config(
+        self,
+        request: v1_dot_service__pb2.GetGlobalConfigRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> v1_dot_service__pb2.GetGlobalConfigResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetGlobalConfig",
+                service_name="v1.ConfigService",
+                input=v1_dot_service__pb2.GetGlobalConfigRequest,
+                output=v1_dot_service__pb2.GetGlobalConfigResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+
 class ExampleServiceSync(Protocol):
     def ping(self, request: v1_dot_service__pb2.PingRequest, ctx: RequestContext) -> v1_dot_service__pb2.PingResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -113,6 +167,57 @@ class ExampleServiceClientSync(ConnectClientSync):
                 service_name="v1.ExampleService",
                 input=v1_dot_service__pb2.PingRequest,
                 output=v1_dot_service__pb2.PingResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+class ConfigServiceSync(Protocol):
+    def get_global_config(self, request: v1_dot_service__pb2.GetGlobalConfigRequest, ctx: RequestContext) -> v1_dot_service__pb2.GetGlobalConfigResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+
+class ConfigServiceWSGIApplication(ConnectWSGIApplication):
+    def __init__(self, service: ConfigServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+        super().__init__(
+            endpoints={
+                "/v1.ConfigService/GetGlobalConfig": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetGlobalConfig",
+                        service_name="v1.ConfigService",
+                        input=v1_dot_service__pb2.GetGlobalConfigRequest,
+                        output=v1_dot_service__pb2.GetGlobalConfigResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_global_config,
+                ),
+            },
+            interceptors=interceptors,
+            read_max_bytes=read_max_bytes,
+        )
+
+    @property
+    def path(self) -> str:
+        """Returns the URL path to mount the application to when serving multiple applications."""
+        return "/v1.ConfigService"
+
+
+class ConfigServiceClientSync(ConnectClientSync):
+    def get_global_config(
+        self,
+        request: v1_dot_service__pb2.GetGlobalConfigRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> v1_dot_service__pb2.GetGlobalConfigResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetGlobalConfig",
+                service_name="v1.ConfigService",
+                input=v1_dot_service__pb2.GetGlobalConfigRequest,
+                output=v1_dot_service__pb2.GetGlobalConfigResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

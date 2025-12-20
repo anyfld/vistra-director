@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10v1/service.proto\x12\x02v1\"\r\n\x0bPingRequest\"(\n\x0cPingResponse\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message2=\n\x0e\x45xampleService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x42\x46ZDgithub.com/anyfld/vistra-operation-control-room/gen/proto/v1;protov1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10v1/service.proto\x12\x02v1\"\r\n\x0bPingRequest\"(\n\x0cPingResponse\x12\x18\n\x07message\x18\x01 \x01(\tR\x07message\"\x18\n\x16GetGlobalConfigRequest\"C\n\x17GetGlobalConfigResponse\x12(\n\x06\x63onfig\x18\x01 \x01(\x0b\x32\x10.v1.GlobalConfigR\x06\x63onfig\">\n\x0cGlobalConfig\x12.\n\x13webrtc_url_template\x18\x01 \x01(\tR\x11webrtcUrlTemplate2=\n\x0e\x45xampleService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x32]\n\rConfigService\x12L\n\x0fGetGlobalConfig\x12\x1a.v1.GetGlobalConfigRequest\x1a\x1b.v1.GetGlobalConfigResponse\"\x00\x42\x46ZDgithub.com/anyfld/vistra-operation-control-room/gen/proto/v1;protov1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,6 +36,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PINGREQUEST']._serialized_end=37
   _globals['_PINGRESPONSE']._serialized_start=39
   _globals['_PINGRESPONSE']._serialized_end=79
-  _globals['_EXAMPLESERVICE']._serialized_start=81
-  _globals['_EXAMPLESERVICE']._serialized_end=142
+  _globals['_GETGLOBALCONFIGREQUEST']._serialized_start=81
+  _globals['_GETGLOBALCONFIGREQUEST']._serialized_end=105
+  _globals['_GETGLOBALCONFIGRESPONSE']._serialized_start=107
+  _globals['_GETGLOBALCONFIGRESPONSE']._serialized_end=174
+  _globals['_GLOBALCONFIG']._serialized_start=176
+  _globals['_GLOBALCONFIG']._serialized_end=238
+  _globals['_EXAMPLESERVICE']._serialized_start=240
+  _globals['_EXAMPLESERVICE']._serialized_end=301
+  _globals['_CONFIGSERVICE']._serialized_start=303
+  _globals['_CONFIGSERVICE']._serialized_end=396
 # @@protoc_insertion_point(module_scope)
