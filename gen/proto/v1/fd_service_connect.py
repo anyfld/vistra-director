@@ -37,9 +37,6 @@ class FDService(Protocol):
     async def calculate_framing(self, request: v1_dot_fd__service__pb2.CalculateFramingRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.CalculateFramingResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
 
 class FDServiceASGIApplication(ConnectASGIApplication[FDService]):
     def __init__(self, service: FDService | AsyncGenerator[FDService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
@@ -115,16 +112,6 @@ class FDServiceASGIApplication(ConnectASGIApplication[FDService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.calculate_framing,
-                ),
-                "/v1.FDService/StreamControlCommands": Endpoint.unary(
-                    method=MethodInfo(
-                        name="StreamControlCommands",
-                        service_name="v1.FDService",
-                        input=v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-                        output=v1_dot_fd__service__pb2.StreamControlCommandsResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=svc.stream_control_commands,
                 ),
             },
             interceptors=interceptors,
@@ -278,26 +265,6 @@ class FDServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    async def stream_control_commands(
-        self,
-        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
-        return await self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="StreamControlCommands",
-                service_name="v1.FDService",
-                input=v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-                output=v1_dot_fd__service__pb2.StreamControlCommandsResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
 
 class FDServiceSync(Protocol):
     def execute_cinematography(self, request: v1_dot_fd__service__pb2.ExecuteCinematographyRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.ExecuteCinematographyResponse:
@@ -313,8 +280,6 @@ class FDServiceSync(Protocol):
     def stream_pattern_match_results(self, request: v1_dot_fd__service__pb2.StreamPatternMatchResultsRequest, ctx: RequestContext) -> Iterator[v1_dot_fd__service__pb2.StreamPatternMatchResultsResponse]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def calculate_framing(self, request: v1_dot_fd__service__pb2.CalculateFramingRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.CalculateFramingResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_control_commands(self, request: v1_dot_fd__service__pb2.StreamControlCommandsRequest, ctx: RequestContext) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -391,16 +356,6 @@ class FDServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.calculate_framing,
-                ),
-                "/v1.FDService/StreamControlCommands": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="StreamControlCommands",
-                        service_name="v1.FDService",
-                        input=v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-                        output=v1_dot_fd__service__pb2.StreamControlCommandsResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=service.stream_control_commands,
                 ),
             },
             interceptors=interceptors,
@@ -548,26 +503,6 @@ class FDServiceClientSync(ConnectClientSync):
                 service_name="v1.FDService",
                 input=v1_dot_fd__service__pb2.CalculateFramingRequest,
                 output=v1_dot_fd__service__pb2.CalculateFramingResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
-    def stream_control_commands(
-        self,
-        request: v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> v1_dot_fd__service__pb2.StreamControlCommandsResponse:
-        return self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="StreamControlCommands",
-                service_name="v1.FDService",
-                input=v1_dot_fd__service__pb2.StreamControlCommandsRequest,
-                output=v1_dot_fd__service__pb2.StreamControlCommandsResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,
